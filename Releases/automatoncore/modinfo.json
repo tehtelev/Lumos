@@ -1,0 +1,14 @@
+﻿{
+  "type": "code",
+  "modid": "automatoncore",
+  "name": "Automaton: Core",
+  "authors": [
+    "Tehtelev",
+    "Kotl"
+  ],
+  "description": "Automatics logic library.",
+  "Version": "0.0.1",
+  "dependencies": {
+    "game": "0.0.1"
+  }
+}
