@@ -32,12 +32,12 @@ namespace Automaton
         public readonly HashSet<Network> networks = new();
         public readonly Dictionary<BlockPos, NetworkPart> parts = new(); // Хранит все элементы всех цепей
 
-        private Dictionary<BlockPos, List<EnergyPacket>> packetsByPosition = new(); //Словарь для хранения пакетов по позициям
+        private Dictionary<BlockPos, List<LogicPacket>> packetsByPosition = new(); //Словарь для хранения пакетов по позициям
 
 
-        private readonly List<EnergyPacket> globalEnergyPackets = new(); // Глобальный список пакетов энергии
+        private readonly List<LogicPacket> globalEnergyPackets = new(); // Глобальный список пакетов энергии
 
-        private AsyncPathFinder asyncPathFinder= null!;
+        private AsyncPathFinder asyncPathFinder = null!;
 
         //public PathFinder pathFinder = new PathFinder(); // Модуль поиска путей
 
@@ -47,7 +47,7 @@ namespace Automaton
         private List<Consumer> localConsumers = new List<Consumer>();
         private List<Producer> localProducers = new List<Producer>();
         private List<Accumulator> localAccums = new List<Accumulator>();
-        private List<EnergyPacket> localPackets = new List<EnergyPacket>(); // Для пакетов сети
+        private List<LogicPacket> localPackets = new List<LogicPacket>(); // Для пакетов сети
 
         private List<BlockPos> consumerPositions = new();
         private List<float> consumerRequests = new();
@@ -70,7 +70,7 @@ namespace Automaton
         private ICoreClientAPI capi = null!;
         private ICoreServerAPI sapi = null!;
         private ElectricityConfig? config;
-        public static DamageManager? damageManager;
+        //public static DamageManager? damageManager;
         public static WeatherSystemServer? WeatherSystemServer;
 
 
@@ -140,7 +140,7 @@ namespace Automaton
             api = null!;
             capi = null!;
             sapi = null!;
-            damageManager = null;
+            //damageManager = null;
             WeatherSystemServer = null;
 
 
@@ -185,7 +185,7 @@ namespace Automaton
             capi = api;
             RegisterAltKeys();
 
-            
+
             //listenerId2 = capi.Event.RegisterGameTickListener(this.OnGameTickClient, tickTimeMs);
         }
 
@@ -216,7 +216,7 @@ namespace Automaton
             WeatherSystemServer = sapi.ModLoader.GetModSystem<WeatherSystemServer>();
 
             //инициализируем обработчик уронов
-            damageManager = new DamageManager(api);
+            //damageManager = new DamageManager(api);
 
             listenerId1 = sapi.Event.RegisterGameTickListener(OnGameTickServer, tickTimeMs);
 
@@ -235,7 +235,7 @@ namespace Automaton
         /// <param name="setEparams"></param>
         /// <param name="Eparams"></param>
         /// <returns></returns>
-        public bool Update(BlockPos position, Facing facing, (EParams, int) setEparams, ref EParams[] Eparams, bool isLoaded)
+        public bool Update(BlockPos position, Facing facing, (AParams, int) setEparams, ref AParams[] Eparams, bool isLoaded)
         {
             if (!parts.TryGetValue(position, out var part))
             {
@@ -248,7 +248,7 @@ namespace Automaton
             var removedConnections = part.Connection & ~facing;
 
             part.IsLoaded = isLoaded;
-            part.eparams = Eparams;
+            part.aparams = Eparams;
             part.Connection = facing;
 
             AddConnections(ref part, addedConnections, setEparams);
@@ -258,7 +258,7 @@ namespace Automaton
                 parts.Remove(position);
 
             //Cleaner();
-            Eparams = part.eparams;
+            Eparams = part.aparams;
             return true;
         }
 
@@ -288,21 +288,22 @@ namespace Automaton
             {
                 var part = kvp.Value;
                 //не трогать тут ничего
-                if (part.eparams != null && part.eparams.Length == 6) // если проводник существует и имеет 6 проводников
+                if (part.aparams != null && part.aparams.Length == 6) // если проводник существует и имеет 6 проводников
                 {
+                    /*
                     for (var i = 0; i < 6; i++)
                     {
-                        if (!part.eparams[i].burnout && part.eparams[i].ticksBeforeBurnout > 0) // если проводник не сгорел и есть тики до сгорания
-                            part.eparams[i].ticksBeforeBurnout--;                               // уменьшаем тики до сгорания
+                        if (!part.aparams[i].burnout && part.aparams[i].ticksBeforeBurnout > 0) // если проводник не сгорел и есть тики до сгорания
+                            part.aparams[i].ticksBeforeBurnout--;                               // уменьшаем тики до сгорания
                     }
-
+                    */
                 }
                 else
                 {
-                    part.eparams = new EParams[]
+                    part.aparams = new AParams[]
                     {
-                            new EParams(), new EParams(), new EParams(),
-                            new EParams(), new EParams(), new EParams()
+                            new AParams(), new AParams(), new AParams(),
+                            new AParams(), new AParams(), new AParams()
                     };
                 }
 
@@ -554,7 +555,7 @@ namespace Automaton
 
 
 
-                EnergyPacket packet;   // Временная переменная для пакета энергии
+                LogicPacket packet;   // Временная переменная для пакета энергии
                 BlockPos posStore; // Позиция магазина в мире
                 BlockPos posCustomer; // Позиция потребителя в мире
                 var customCount = sim.Customers?.Count ?? 0; // Количество клиентов в симуляции
@@ -581,9 +582,8 @@ namespace Automaton
                                     continue;
 
                                 // создаём пакет, не копируя ничего
-                                packet = new EnergyPacket(
-                                    value,
-                                    parts[posStore].eparams[facing.Last()].voltage,
+                                packet = new LogicPacket(
+                                    parts[posStore].aparams[facing.Last()].material,
                                     path.Length - 1,
                                     path,
                                     facing,
@@ -687,9 +687,8 @@ namespace Automaton
                                     continue;
 
                                 // создаём пакет, не копируя ничего
-                                packet = new EnergyPacket(
-                                    value,
-                                    parts[posStore].eparams[facing.Last()].voltage,
+                                packet = new LogicPacket(
+                                    parts[posStore].aparams[facing.Last()].material,
                                     path.Length - 1,
                                     path,
                                     facing,
@@ -783,7 +782,7 @@ namespace Automaton
                     pos = packet2.path[packet2.currentIndex];
                     if (!packetsByPosition.TryGetValue(pos, out var list))
                     {
-                        list = new List<EnergyPacket>();
+                        list = new List<LogicPacket>();
                         packetsByPosition[pos] = list;
                     }
 
@@ -797,7 +796,7 @@ namespace Automaton
             BlockPos partPos;                        // Временная переменная для позиции части сети
             NetworkPart part;                        // Временная переменная для части сети
             bool updated;                            // Флаг обновления части сети от повреждения
-            EParams faceParams;                      // Параметры грани сети
+            AParams faceParams;                      // Параметры грани сети
             int lastFaceIndex;                       // Индекс последней грани в пакете
             float totalEnergy;                       // Суммарная энергия в трансформаторе
             float totalCurrent;                      // Суммарный ток в трансформаторе
@@ -808,30 +807,13 @@ namespace Automaton
                 partPos = partEntry.Key;
                 part = partEntry.Value;
 
-                //обновляем каждый блок сети
-                updated = kons % 20 == envUpdater &&
-                          part.IsLoaded &&          // блок загружен?
-                          (damageManager?.DamageByEnvironment(sapi, ref part, ref bAccessor) ?? false);
-                kons++;
 
 
-                if (updated)
-                {
-                    for (var faceIndex = 0; faceIndex < 6; faceIndex++)
-                    {
-                        faceParams = part.eparams[faceIndex];
-                        if (faceParams.voltage == 0 || !faceParams.burnout)
-                            continue;
-
-                        ResetComponents(ref part); // сброс компонентов сети
-                    }
-
-                }
-
-
+                /*
                 // Обрабатываем пакеты в этой части сети
                 if (packetsByPosition.TryGetValue(partPos, out var packets))
                 {
+
                     var bufPartTrans = part.Transformator;
                     // Обработка трансформаторов
                     if (bufPartTrans != null)
@@ -859,7 +841,7 @@ namespace Automaton
                                 FacingHelper.FromFace(FacingHelper.Faces(part.Connection)
                                     .First())); // Индекс грани трансформатора!
 
-                        part.eparams[transformatorFaceIndex].current = totalCurrent;
+                        part.aparams[transformatorFaceIndex].current = totalCurrent;
 
                         bufPartTrans.setPower(totalEnergy);
 
@@ -871,10 +853,10 @@ namespace Automaton
                     {
                         lastFaceIndex = packet2.facingFrom[packet2.currentIndex];
 
-                        faceParams = part.eparams[lastFaceIndex];
+                        faceParams = part.aparams[lastFaceIndex];
                         if (faceParams.voltage != 0 && packet2.voltage > faceParams.voltage)
                         {
-                            part.eparams[lastFaceIndex].prepareForBurnout(2);
+                            part.aparams[lastFaceIndex].prepareForBurnout(2);
 
                             if (packet2.path[packet2.currentIndex] == partPos)
                                 packet2.shouldBeRemoved = true;
@@ -884,40 +866,15 @@ namespace Automaton
                             break;
                         }
                     }
-
-                }
-
-
-
-                // Проверка на превышение тока
-                for (var faceIndex = 0; faceIndex < 6; faceIndex++)
-                {
-
-                    faceParams = part.eparams[faceIndex];
-                    if (faceParams.voltage == 0 ||
-                        Math.Abs(faceParams.current) <= faceParams.maxCurrent * faceParams.lines)
-                        continue;
-
-                    part.eparams[faceIndex].prepareForBurnout(1);
+                   
+            }
+ */
 
 
-                    foreach (var p in globalEnergyPackets)
-                    {
-                        if (p.path[p.currentIndex] == partPos &&
-                            p.nowProcessedFaces.LastOrDefault()?[faceIndex] == true)
-                        {
-                            p.shouldBeRemoved = true;
-                        }
-                    }
 
-                    ResetComponents(ref part);
-                }
             }
 
 
-            envUpdater++;
-            if (envUpdater > 19)
-                envUpdater = 0;
 
 
 
@@ -954,12 +911,12 @@ namespace Automaton
                     sumEnergy[part2.Key] = 0F;
                 }
 
-                part2.Value.eparams[0].current = 0f;       //обнуляем токи
-                part2.Value.eparams[1].current = 0f;       //обнуляем токи
-                part2.Value.eparams[2].current = 0f;       //обнуляем токи
-                part2.Value.eparams[3].current = 0f;       //обнуляем токи
-                part2.Value.eparams[4].current = 0f;       //обнуляем токи
-                part2.Value.eparams[5].current = 0f;       //обнуляем токи
+                Array.Fill(part2.Value.aparams[0].signal, false);       //обнуляем токи
+                Array.Fill(part2.Value.aparams[1].signal, false);       //обнуляем токи
+                Array.Fill(part2.Value.aparams[2].signal, false);       //обнуляем токи
+                Array.Fill(part2.Value.aparams[3].signal, false);       //обнуляем токи
+                Array.Fill(part2.Value.aparams[4].signal, false);       //обнуляем токи
+                Array.Fill(part2.Value.aparams[5].signal, false);       //обнуляем токи
             }
 
 
@@ -977,17 +934,17 @@ namespace Automaton
                     {
                         var isValid = false;
                         // Ручная проверка условий 
-                        foreach (var s in part2.eparams)
+                        foreach (var s in part2.aparams)
                         {
-                            if (s.voltage > 0
-                                && !s.burnout
-                                && packet.voltage >= s.voltage)
+                            if (s.material != null  // проверяем что линия подходит
+                                && s.material != ""
+                                && s.material.Contains(packet.material))
                             {
                                 isValid = true;
                                 break;
                             }
                         }
-
+                        /*
                         if (isValid)
                         {
                             if (sumEnergy.TryGetValue(pos, out _))
@@ -999,6 +956,7 @@ namespace Automaton
                                 sumEnergy.Add(pos, packet.energy);
                             }
                         }
+                        */
                     }
 
                     globalEnergyPackets[i].shouldBeRemoved = true;
@@ -1012,78 +970,52 @@ namespace Automaton
                     if (parts.TryGetValue(nextPos, out nextPart!) &&
                         parts.TryGetValue(currentPos, out currentPart!))
                     {
-                        if (!nextPart.eparams[packet.facingFrom[curIndex - 1]].burnout)   //проверяем не сгорела ли грань в след блоке
-                        
+                        if ((nextPart.Connection & packet.usedConnections[curIndex - 1]) == packet.usedConnections[curIndex - 1]) // проверяем совпадает ли путь в пакете с путем в части сети
                         {
+    
+                            /*
+                            // пересчитаем ток уже с учетом потерь
+                            current = packet.energy / packet.voltage;
 
-                            if ((nextPart.Connection & packet.usedConnections[curIndex - 1]) == packet.usedConnections[curIndex - 1]) // проверяем совпадает ли путь в пакете с путем в части сети
+
+                            packet.currentIndex--;
+
+                            // далее учитываем правило алгебраического сложения встречных токов
+                            // 1) Определяем вектор движения
+                            var delta = nextPos.SubCopy(currentPos);
+                            var sign = true;
+
+                            if (delta.X < 0) sign = !sign;
+                            if (delta.Y < 0) sign = !sign;
+                            if (delta.Z < 0) sign = !sign;
+
+                            // 2) Прописываем токи на нужные грани
+                            var j = 0;
+                            foreach (var face in packet.nowProcessedFaces[packet.currentIndex])
                             {
-                                // считаем сопротивление
-                                resistance = currentPart.eparams[currentFacingFrom].resistivity /
-                                             (currentPart.eparams[currentFacingFrom].lines *
-                                              currentPart.eparams[currentFacingFrom].crossArea);
-
-                                // Провод в изоляции теряет меньше энергии
-                                if (currentPart.eparams[currentFacingFrom].isolated)
-                                    resistance /= 2.0f;
-
-                                // считаем ток по закону Ома
-                                current = packet.energy / packet.voltage;
-
-                                // считаем потерю энергии по закону Джоуля
-                                lossEnergy = current * current * resistance;
-                                packet.energy = Math.Max(packet.energy - lossEnergy, 0);
-
-                                // пересчитаем ток уже с учетом потерь
-                                current = packet.energy / packet.voltage;
-
-
-                                packet.currentIndex--;
-
-                                // далее учитываем правило алгебраического сложения встречных токов
-                                // 1) Определяем вектор движения
-                                var delta = nextPos.SubCopy(currentPos);
-                                var sign = true;
-
-                                if (delta.X < 0) sign = !sign;
-                                if (delta.Y < 0) sign = !sign;
-                                if (delta.Z < 0) sign = !sign;
-
-                                // 2) Прописываем токи на нужные грани
-                                var j = 0;
-                                foreach (var face in packet.nowProcessedFaces[packet.currentIndex])
+                                if (face)
                                 {
-                                    if (face)
-                                    {
-                                        if (sign)
-                                            nextPart.eparams[j].current += current; // добавляем ток в следующую часть сети
-                                        else
-                                            nextPart.eparams[j].current -= current; // добавляем ток в следующую часть сети
-                                    }
-
-                                    j++;
+                                    if (sign)
+                                        nextPart.aparams[j].current += current; // добавляем ток в следующую часть сети
+                                    else
+                                        nextPart.aparams[j].current -= current; // добавляем ток в следующую часть сети
                                 }
 
-                                // 3) Если энергия пакета почти нулевая — удаляем пакет
-                                if (packet.energy <= 0.001f)
-                                {
-                                    globalEnergyPackets[i].shouldBeRemoved = true;
-                                }
-
-
+                                j++;
                             }
-                            else
-                            {
-                                // если все же путь не совпадает с путем в пакете, то чистим кэши
-                                PathCacheManager.RemoveAll(packet.path[0], packet.path.Last());
-                                globalEnergyPackets[i].shouldBeRemoved = true;
 
-                            }
+                            */
+
+
                         }
                         else
                         {
+                            // если все же путь не совпадает с путем в пакете, то чистим кэши
+                            PathCacheManager.RemoveAll(packet.path[0], packet.path.Last());
                             globalEnergyPackets[i].shouldBeRemoved = true;
+
                         }
+
                     }
                     else
                     {
@@ -1279,7 +1211,7 @@ namespace Automaton
             {
                 if (parts.TryGetValue(position, out var part))                 //есть такое соединение?
                 {
-                    AddConnections(ref part, part.Connection, (new EParams(), 0));     //добавляем соединения???
+                    AddConnections(ref part, part.Connection, (new AParams(), 0));     //добавляем соединения???
                 }
             }
         }
@@ -1305,7 +1237,7 @@ namespace Automaton
         /// <param name="addedConnections"></param>
         /// <param name="setEparams"></param>
         /// <exception cref="Exception"></exception>
-        private void AddConnections(ref NetworkPart part, Facing addedConnections, (EParams, int) setEparams)
+        private void AddConnections(ref NetworkPart part, Facing addedConnections, (AParams, int) setEparams)
         {
             var networksByFace = new[]
             {
@@ -1456,28 +1388,28 @@ namespace Automaton
                 part.Networks[face.Index] = network;            //присваиваем в этой точке эту цепь
 
                 var i = 0;
-                if (part.eparams == null)
+                if (part.aparams == null)
                 {
-                    part.eparams = new EParams[]
+                    part.aparams = new AParams[]
                             {
-                        new EParams(),
-                        new EParams(),
-                        new EParams(),
-                        new EParams(),
-                        new EParams(),
-                        new EParams()
+                        new AParams(),
+                        new AParams(),
+                        new AParams(),
+                        new AParams(),
+                        new AParams(),
+                        new AParams()
                             };
                 }
 
-                foreach (var ams in part.eparams)
+                foreach (var ams in part.aparams)
                 {
-                    if (ams.Equals(new EParams()))
-                        part.eparams[i] = new EParams();
+                    if (ams.Equals(new AParams()))
+                        part.aparams[i] = new AParams();
                     i++;
                 }
 
-                if (!setEparams.Item1.Equals(new EParams()) && part.eparams[face.Index].maxCurrent == 0)
-                    part.eparams[face.Index] = setEparams.Item1;      //аналогично с параметрами электричества
+                if (!setEparams.Item1.Equals(new AParams()) && (part.aparams[face.Index].material == null || part.aparams[face.Index].material == ""))
+                    part.aparams[face.Index] = setEparams.Item1;      //аналогично с параметрами электричества
             }
 
 
@@ -1658,7 +1590,7 @@ namespace Automaton
 
 
 
-        
+
 
         /// <summary>
         /// Cобирает информацию по цепи
@@ -1681,8 +1613,8 @@ namespace Automaton
                     {
                         localNetwork = net;                                              //выдаем найденную цепь
                         result.Facing |= FacingHelper.FromFace(blockFacing);        //выдаем ее направления
-                        result.eParamsInNetwork = part.eparams[blockFacing.Index];  //выдаем ее текущие параметры
-                        result.current = part.eparams[blockFacing.Index].current;           //выдаем текущий ток в этой грани
+                        result.AParamsInNetwork = part.aparams[blockFacing.Index];  //выдаем ее текущие параметры
+                        //result.current = part.aparams[blockFacing.Index].current;           //выдаем текущий ток в этой грани
                     }
                     else
                         return result;
@@ -1694,8 +1626,9 @@ namespace Automaton
 
                     foreach (var blockFacing2 in FacingHelper.Faces(facing))
                     {
-                        if (part.Networks[blockFacing2.Index] is not null &&
-                            Math.Abs(part.eparams[blockFacing2.Index].current) > 0.0F)
+                        if (part.Networks[blockFacing2.Index] is not null
+                            //&& Math.Abs(part.aparams[blockFacing2.Index].current) > 0.0F
+                            )
                         {
                             blockFacing = blockFacing2;
                             searchIndex = blockFacing2.Index;
@@ -1706,8 +1639,8 @@ namespace Automaton
                     {
                         localNetwork = net;                                              //выдаем найденную цепь
                         result.Facing |= FacingHelper.FromFace(blockFacing);        //выдаем ее направления
-                        result.eParamsInNetwork = part.eparams[searchIndex];  //выдаем ее текущие параметры
-                        result.current = part.eparams[searchIndex].current;           //выдаем текущий ток в этой грани
+                        result.AParamsInNetwork = part.aparams[searchIndex];  //выдаем ее текущие параметры
+                        //result.current = part.aparams[searchIndex].current;           //выдаем текущий ток в этой грани
                     }
                     else
                         return result;
@@ -1797,7 +1730,7 @@ namespace Automaton
         public int speedOfElectricity = 4;
         public int timeBeforeBurnout = 30;
         public int multiThreading = 4;
-        public int cacheTimeoutCleanupMinutes = 2; 
+        public int cacheTimeoutCleanupMinutes = 2;
     }
 
     /// <summary>

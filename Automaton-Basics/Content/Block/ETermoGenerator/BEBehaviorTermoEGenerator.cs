@@ -42,20 +42,10 @@ public class BEBehaviorTermoEGenerator : BlockEntityBehavior, IAutomaticProducer
         //смотрим надо ли обновить модельку когда сгорает прибор
         if (Api.World.BlockAccessor.GetBlockEntity(Blockentity.Pos) is BlockEntityETermoGenerator
             {
-                AllEparams: not null
+                AllAparams: not null
             } entity)
         {
-            var hasBurnout = entity.AllEparams.Any(e => e.burnout);
-
-            if (hasBurnout)
-                ParticleManager.SpawnBlackSmoke(Api.World, Pos.ToVec3d().Add(0.5, 0.5, 0.5));
-
-
-            if (entity.GenTemp > 20 && !hasBurnout)
-            {
-                ParticleManager.SpawnWhiteSmoke(Api.World, Pos.ToVec3d().Add(0.4, entity.heightTermoplastin+0.9, 0.4));
-            }
-
+          
 
         }
 

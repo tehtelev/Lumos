@@ -40,29 +40,29 @@ public class BlockEntityETermoGenerator : BlockEntityGenericTypedContainer, IHea
     }
 
     //передает значения из Block в BEBehaviorAutomaton
-    public (EParams, int) Eparams
+    public (AParams, int) Aparams
     {
-        get => this.Automaton?.Eparams ?? (new EParams(), 0);
-        set => this.Automaton!.Eparams = value;
+        get => this.Automaton?.Aparams ?? (new AParams(), 0);
+        set => this.Automaton!.Aparams = value;
     }
 
     //передает значения из Block в BEBehaviorAutomaton
-    public EParams[] AllEparams
+    public AParams[] AllAparams
     {
-        get => this.Automaton?.AllEparams ?? new EParams[]
+        get => this.Automaton?.AllAparams ?? new AParams[]
                     {
-                        new EParams(),
-                        new EParams(),
-                        new EParams(),
-                        new EParams(),
-                        new EParams(),
-                        new EParams()
+                        new AParams(),
+                        new AParams(),
+                        new AParams(),
+                        new AParams(),
+                        new AParams(),
+                        new AParams()
                     };
         set
         {
             if (this.Automaton != null)
             {
-                this.Automaton.AllEparams = value;
+                this.Automaton.AllAparams = value;
             }
         }
     }

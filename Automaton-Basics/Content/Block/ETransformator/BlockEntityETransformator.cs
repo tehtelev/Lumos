@@ -4,7 +4,7 @@ using Vintagestory.API.Common;
 
 namespace Automaton.Content.Block.ETransformator;
 
-public class BlockEntityETransformator : BlockEntityEBase
+public class BlockEntityETransformator : BlockEntityABase
 {
     public override void OnBlockPlaced(ItemStack? byItemStack = null)
     {
@@ -21,8 +21,8 @@ public class BlockEntityETransformator : BlockEntityEBase
         var isolatedEnvironment = MyMiniLib.GetAttributeBool(byItemStack.Block, "isolatedEnvironment", false);
 
         this.Automaton.Connection = Facing.DownAll;
-        this.Automaton.Eparams = (
-            new(voltage, maxCurrent, "", 0, 1, 1, false, isolated, isolatedEnvironment),
+        this.Automaton.Aparams = (
+            new(""),
             FacingHelper.Faces(Facing.DownAll).First().Index);
     }
 }

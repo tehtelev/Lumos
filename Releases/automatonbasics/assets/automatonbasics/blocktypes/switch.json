@@ -5,7 +5,7 @@
     "general": [
       "*-enabled"
     ],
-    "electricity": [
+    "automaton": [
       "*-enabled"
     ]
   },

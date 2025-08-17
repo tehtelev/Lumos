@@ -50,10 +50,10 @@ public abstract class BlockEBase : Vintagestory.API.Common.Block
             return;
 
         // если блокэнтити не найден, выходим
-        if (world.BlockAccessor.GetBlockEntity(pos) is not BlockEntityEBase blockEntityEBase)
+        if (world.BlockAccessor.GetBlockEntity(pos) is not BlockEntityABase blockEntityEBase)
             return;
 
         // передаем работу в наш обработчик урона
-        Automaton.damageManager?.DamageEntity(world, entity, pos, facing, blockEntityEBase.AllEparams!, this);
+        //Automaton.damageManager?.DamageEntity(world, entity, pos, facing, blockEntityEBase.AllEparams!, this);
     }
 }

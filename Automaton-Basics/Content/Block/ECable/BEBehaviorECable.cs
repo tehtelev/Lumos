@@ -13,9 +13,10 @@ using Vintagestory.API.MathTools;
 
 namespace Automaton.Content.Block.ECable
 {
-    public class BEBehaviorECable : BlockEntityBehavior, IAutomaticConductor
+    /*
+    public class BEBehaviorACable : BlockEntityBehavior, IAutomaticConductor
     {
-        public BEBehaviorECable(BlockEntity blockentity) : base(blockentity)
+        public BEBehaviorACable(BlockEntity blockentity) : base(blockentity)
         {
         }
 
@@ -30,7 +31,7 @@ namespace Automaton.Content.Block.ECable
             base.GetBlockInfo(forPlayer, stringBuilder);
 
             
-            if (Api.World.BlockAccessor.GetBlockEntity(Blockentity.Pos) is not BlockEntityECable entity)
+            if (Api.World.BlockAccessor.GetBlockEntity(Blockentity.Pos) is not BlockEntityACable entity)
                 return;
 
 
@@ -46,7 +47,7 @@ namespace Automaton.Content.Block.ECable
         public void Update()
         {
             //смотрим надо ли обновить модельку когда сгорает прибор
-            if (Api.World.BlockAccessor.GetBlockEntity(Blockentity.Pos) is BlockEntityECable
+            if (Api.World.BlockAccessor.GetBlockEntity(Blockentity.Pos) is BlockEntityACable
                 {
                     AllEparams: not null
                 } entity)
@@ -69,4 +70,5 @@ namespace Automaton.Content.Block.ECable
 
 
     }
+    */
 }

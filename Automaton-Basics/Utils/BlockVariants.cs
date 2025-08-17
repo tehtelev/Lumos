@@ -1,4 +1,4 @@
-﻿using Automaton.Content.Block.ECable;
+﻿using Automaton.Content.Block.ACable;
 using System;
 using Vintagestory.API.Client;
 using Vintagestory.API.Common;
@@ -18,24 +18,18 @@ public class BlockVariants
     /// <param name="api"></param>
     /// <param name="baseBlock"></param>
     /// <param name="material"></param>
-    /// <param name="indexQuantity"></param>
     /// <param name="indexType"></param>
-    public BlockVariants(ICoreAPI api, CollectibleObject baseBlock, int indexVoltage, string material, int indexQuantity, int indexType)
+    public BlockVariants(ICoreAPI api, CollectibleObject baseBlock, string material, int indexType)
     {
 
+        string[] t = new string[2];
+        string[] v = new string[2];
 
-        string[] t = new string[4];
-        string[] v = new string[4];
+        t[0] = "bit";
+        t[1] = "type";
 
-        t[0] = "voltage";
-        t[1] = "material";
-        t[2] = "quantity";
-        t[3] = "type";
-
-        v[0] = BlockECable.voltages[indexVoltage];
-        v[1] = material;
-        v[2] = BlockECable.quantitys[indexQuantity];
-        v[3] = BlockECable.types[indexType];
+        v[0] = material;
+        v[1] = BlockACable.types[indexType];
 
         var assetLocation = baseBlock.CodeWithVariants(t, v);
         var block = api.World.GetBlock(assetLocation);

@@ -119,8 +119,8 @@ public class BlockETermoGenerator : BlockEBase
             var isolated = MyMiniLib.GetAttributeBool(this, "isolated", false);
             var isolatedEnvironment = MyMiniLib.GetAttributeBool(this, "isolatedEnvironment", false);
 
-            entity.Eparams = (
-                new(voltage, maxCurrent, "", 0, 1, 1, false, isolated, isolatedEnvironment),
+            entity.Aparams = (
+                new(""),
                 FacingHelper.Faces(facing).First().Index);
 
 

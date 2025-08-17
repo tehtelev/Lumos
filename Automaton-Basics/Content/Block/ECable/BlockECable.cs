@@ -1,5 +1,4 @@
-﻿using Automaton.Content.Block.ESwitch;
-using Automaton.Utils;
+﻿using Automaton.Utils;
 using HarmonyLib;
 using System;
 using System.Collections.Concurrent;
@@ -14,7 +13,8 @@ using Vintagestory.API.Util;
 
 namespace Automaton.Content.Block.ECable
 {
-    public class BlockECable : BlockEBase
+    /*
+    public class BlockACable : BlockEBase
     {
         private readonly static ConcurrentDictionary<CacheDataKey, Dictionary<Facing, Cuboidf[]>> CollisionBoxesCache = new();
 
@@ -77,14 +77,14 @@ namespace Automaton.Content.Block.ECable
         public override void OnUnloaded(ICoreAPI api)
         {
             base.OnUnloaded(api);
-            BlockECable.CollisionBoxesCache.Clear();
-            BlockECable.SelectionBoxesCache.Clear();
-            BlockECable.MeshDataCache.Clear();
+            BlockACable.CollisionBoxesCache.Clear();
+            BlockACable.SelectionBoxesCache.Clear();
+            BlockACable.MeshDataCache.Clear();
         }
 
         public override bool IsReplacableBy(Vintagestory.API.Common.Block block)
         {
-            return base.IsReplacableBy(block) || block is BlockECable || block is BlockESwitch;
+            return base.IsReplacableBy(block) || block is BlockACable || block is BlockESwitch;
         }
 
 
@@ -104,7 +104,7 @@ namespace Automaton.Content.Block.ECable
             var currentGameMode = byPlayer.WorldData.CurrentGameMode;
 
             // Если размещаем кабель в блоке без кабелей
-            if (world.BlockAccessor.GetBlockEntity(blockSelection.Position) is not BlockEntityECable entity)
+            if (world.BlockAccessor.GetBlockEntity(blockSelection.Position) is not BlockEntityACable entity)
             {
                 if (!HasSolidNeighbor(world, blockSelection.Position, faceIndex))
                     return false;
@@ -114,7 +114,7 @@ namespace Automaton.Content.Block.ECable
                     return false;
 
                 // В теории такого не должно произойти
-                if (world.BlockAccessor.GetBlockEntity(blockSelection.Position) is not BlockEntityECable placedCable)
+                if (world.BlockAccessor.GetBlockEntity(blockSelection.Position) is not BlockEntityACable placedCable)
                     return false;
 
                 // обновляем текущий блок с кабелем 
@@ -285,7 +285,7 @@ namespace Automaton.Content.Block.ECable
             if (this.api is ICoreClientAPI)
                 return;
 
-            if (world.BlockAccessor.GetBlockEntity(position) is not BlockEntityECable entity)
+            if (world.BlockAccessor.GetBlockEntity(position) is not BlockEntityACable entity)
             {
                 base.OnBlockBroken(world, position, byPlayer, dropQuantityMultiplier);
                 return;
@@ -400,7 +400,7 @@ namespace Automaton.Content.Block.ECable
         /// <returns></returns>
         public override ItemStack[] GetDrops(IWorldAccessor world, BlockPos position, IPlayer byPlayer, float dropQuantityMultiplier = 1)
         {
-            if (world.BlockAccessor.GetBlockEntity(position) is not BlockEntityECable entity)
+            if (world.BlockAccessor.GetBlockEntity(position) is not BlockEntityACable entity)
                 return base.GetDrops(world, position, byPlayer, dropQuantityMultiplier);
 
             var itemStacks = new ItemStack[] { };
@@ -455,7 +455,7 @@ namespace Automaton.Content.Block.ECable
         {
             base.OnNeighbourBlockChange(world, pos, neibpos);
 
-            if (world.BlockAccessor.GetBlockEntity(pos) is not BlockEntityECable entity)
+            if (world.BlockAccessor.GetBlockEntity(pos) is not BlockEntityACable entity)
                 return;
 
             var blockFacing = BlockFacing.FromVector(neibpos.X - pos.X, neibpos.Y - pos.Y, neibpos.Z - pos.Z);
@@ -548,7 +548,7 @@ namespace Automaton.Content.Block.ECable
                 return true;
 
             //это кабель?
-            if (world.BlockAccessor.GetBlockEntity(blockSel.Position) is BlockEntityECable entity)
+            if (world.BlockAccessor.GetBlockEntity(blockSel.Position) is BlockEntityACable entity)
             {
                 var key = CacheDataKey.FromEntity(entity);
                 var hitPosition = blockSel.HitPosition;
@@ -576,11 +576,11 @@ namespace Automaton.Content.Block.ECable
         /// <returns></returns>
         public override Cuboidf[] GetSelectionBoxes(IBlockAccessor blockAccessor, BlockPos position)
         {
-            if (blockAccessor.GetBlockEntity(position) is BlockEntityECable { AllEparams: not null } entity)
+            if (blockAccessor.GetBlockEntity(position) is BlockEntityACable { AllEparams: not null } entity)
             {
                 var key = CacheDataKey.FromEntity(entity);
 
-                var boxes = CalculateBoxes(key, BlockECable.SelectionBoxesCache, entity);
+                var boxes = CalculateBoxes(key, BlockACable.SelectionBoxesCache, entity);
                 return boxes.Values.ToArray() // копируем значения
                     .SelectMany(x => x)
                     .Distinct()
@@ -600,11 +600,11 @@ namespace Automaton.Content.Block.ECable
         /// <returns></returns>
         public override Cuboidf[] GetCollisionBoxes(IBlockAccessor blockAccessor, BlockPos position)
         {
-            if (blockAccessor.GetBlockEntity(position) is BlockEntityECable { AllEparams: not null } entity)
+            if (blockAccessor.GetBlockEntity(position) is BlockEntityACable { AllEparams: not null } entity)
             {
                 var key = CacheDataKey.FromEntity(entity);
 
-                var boxes = CalculateBoxes(key, BlockECable.CollisionBoxesCache, entity);
+                var boxes = CalculateBoxes(key, BlockACable.CollisionBoxesCache, entity);
                 return boxes.Values.ToArray() // копируем значения
                     .SelectMany(x => x)
                     .Distinct()
@@ -639,14 +639,14 @@ namespace Automaton.Content.Block.ECable
         /// <param name="extIndex3d"></param>
         public override void OnJsonTesselation(ref MeshData sourceMesh, ref int[] lightRgbsByCorner, BlockPos position, Vintagestory.API.Common.Block[] chunkExtBlocks, int extIndex3d)
         {
-            if (this.api.World.BlockAccessor.GetBlockEntity(position) is BlockEntityECable entity
+            if (this.api.World.BlockAccessor.GetBlockEntity(position) is BlockEntityACable entity
                 && entity.Connection != Facing.None
                 && entity.AllEparams != null
                 && entity.Block.Code.ToString().Contains("ecable"))
             {
                 var key = CacheDataKey.FromEntity(entity);
 
-                if (!BlockECable.MeshDataCache.TryGetValue(key, out var meshData))
+                if (!BlockACable.MeshDataCache.TryGetValue(key, out var meshData))
                 {
                     var origin = new Vec3f(0.5f, 0.5f, 0.5f);
                     var origin0 = new Vec3f(0f, 0f, 0f);
@@ -1320,7 +1320,7 @@ namespace Automaton.Content.Block.ECable
                         );
                     }
 
-                    BlockECable.MeshDataCache[key] = meshData!;
+                    BlockACable.MeshDataCache[key] = meshData!;
                 }
 
                 sourceMesh = meshData ?? sourceMesh;
@@ -1336,7 +1336,7 @@ namespace Automaton.Content.Block.ECable
         /// <param name="boxesCache"></param>
         /// <param name="entity"></param>
         /// <returns></returns>
-        public static Dictionary<Facing, Cuboidf[]> CalculateBoxes(CacheDataKey key, IDictionary<CacheDataKey, Dictionary<Facing, Cuboidf[]>> boxesCache, BlockEntityECable entity)
+        public static Dictionary<Facing, Cuboidf[]> CalculateBoxes(CacheDataKey key, IDictionary<CacheDataKey, Dictionary<Facing, Cuboidf[]>> boxesCache, BlockEntityACable entity)
         {
             if (!boxesCache.TryGetValue(key, out var boxes)
                 && entity.Connection != Facing.None
@@ -2034,7 +2034,7 @@ namespace Automaton.Content.Block.ECable
                 AllEparams = allEparams;
             }
 
-            public static CacheDataKey FromEntity(BlockEntityECable entityE)
+            public static CacheDataKey FromEntity(BlockEntityACable entityE)
             {
                 EParams[] bufAllEparams = entityE.AllEparams!.ToArray();
                 return new(
@@ -2084,4 +2084,5 @@ namespace Automaton.Content.Block.ECable
             }
         }
     }
+    */
 }

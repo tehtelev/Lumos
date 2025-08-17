@@ -1,11 +1,10 @@
-﻿using Automaton.Content.Block.EConnector;
+﻿using Automaton.Content.Block.AConnector;
 using Automaton.Content.Block.EGenerator;
 using Automaton.Content.Block.EMotor;
 using Vintagestory.API.Common;
 using Automaton.Content.Block;
-using Automaton.Content.Block.ESwitch;
 using Vintagestory.API.Client;
-using Automaton.Content.Block.ECable;
+using Automaton.Content.Block.ACable;
 using Automaton.Content.Block.ETransformator;
 using Automaton.Content.Block.ETermoGenerator;
 using Automaton.Content.Block.Termoplastini;
@@ -60,17 +59,17 @@ public class AutomatonBasics : ModSystem
 
         this.api = api;
 
-        api.RegisterBlockClass("BlockECable", typeof(BlockECable));
-        api.RegisterBlockEntityClass("BlockEntityECable", typeof(BlockEntityECable));
-        api.RegisterBlockEntityBehaviorClass("BEBehaviorECable", typeof(BEBehaviorECable));
+        api.RegisterBlockClass("BlockACable", typeof(BlockACable));
+        api.RegisterBlockEntityClass("BlockEntityACable", typeof(BlockEntityACable));
+        api.RegisterBlockEntityBehaviorClass("BEBehaviorACable", typeof(BEBehaviorACable));
 
-        api.RegisterBlockClass("BlockESwitch", typeof(BlockESwitch));
+        
 
 
 
         api.RegisterBlockClass("BlockConnector", typeof(BlockConnector));
-        api.RegisterBlockEntityClass("BlockEntityEConnector", typeof(BlockEntityEConnector));
-        api.RegisterBlockEntityBehaviorClass("BEBehaviorEConnector", typeof(BEBehaviorEConnector));
+        api.RegisterBlockEntityClass("BlockEntityAConnector", typeof(BlockEntityAConnector));
+        api.RegisterBlockEntityBehaviorClass("BEBehaviorAConnector", typeof(BEBehaviorAConnector));
 
 
         api.RegisterBlockClass("BlockETransformator", typeof(BlockETransformator));

@@ -187,29 +187,9 @@ public class BEBehaviorEMotor : BEBehaviorMPBase, IAutomaticConsumer
     public void Update()
     {
         //смотрим надо ли обновить модельку когда сгорает прибор
-        if (this.Api.World.BlockAccessor.GetBlockEntity(this.Blockentity.Pos) is BlockEntityEMotor { AllEparams: not null } entity)
+        if (this.Api.World.BlockAccessor.GetBlockEntity(this.Blockentity.Pos) is BlockEntityEMotor { AllAparams: not null } entity)
         {
-            bool hasBurnout = entity.AllEparams.Any(e => e.burnout);
-
-            if (hasBurnout)
-            {
-                ParticleManager.SpawnBlackSmoke(this.Api.World, Pos.ToVec3d().Add(0.1, 0, 0.1));
-            }
-
-            if (hasBurnout && entity.Block.Variant["type"] != "burned")
-            {
-                string type = "type";
-                string variant = "burned";
-
-                this.Api.World.BlockAccessor.ExchangeBlock(Api.World.GetBlock(Block.CodeWithVariant(type, variant)).BlockId, Pos);
-
-            }
-
-            bool prepareBurnout = entity.AllEparams.Any(e => e.ticksBeforeBurnout > 0);
-            if (prepareBurnout)
-            {
-                ParticleManager.SpawnWhiteSlowSmoke(this.Api.World, Pos.ToVec3d().Add(0.1, 0, 0.1));
-            }
+            
 
             
         }

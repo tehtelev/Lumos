@@ -22,7 +22,7 @@
 	},
 	"creativeinventory": {
 		"general": [ "*" ],
-		"electricity": [ "*" ]
+		"automaton": [ "*" ]
 	},
 	"dimensions": {
 		"width": 0.0625,

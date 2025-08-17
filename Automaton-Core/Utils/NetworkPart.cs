@@ -9,7 +9,7 @@ namespace Automaton.Utils
     public class NetworkPart
     {
         public readonly Network?[] Networks = new Network?[6];
-        public EParams[] eparams = new EParams[] { };
+        public AParams[] aparams = new AParams[] { };
         public readonly BlockPos Position;
         public Facing Connection = Facing.None;
         public IAutomaticAccumulator? Accumulator;

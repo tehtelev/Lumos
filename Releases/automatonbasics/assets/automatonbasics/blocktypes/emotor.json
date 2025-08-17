@@ -79,7 +79,7 @@
     "mechanics": [
       "*-stator"
     ],
-    "electricity": [
+    "automaton": [
       "*-stator"
     ]
   },

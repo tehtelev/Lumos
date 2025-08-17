@@ -43,7 +43,7 @@
 
   "creativeinventory": {
     "general": [ "*-south" ],
-    "electricity": [ "*-south" ]
+    "automaton": [ "*-south" ]
   },
 
   "variantgroups": [

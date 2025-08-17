@@ -6,7 +6,7 @@ using Vintagestory.API.Util;
 
 namespace Automaton.Content.Block.EMotor;
 
-public class BlockEntityEMotor : BlockEntityEFacingBase
+public class BlockEntityEMotor : BlockEntityAFacingBase
 {
     public override Facing GetConnection(Facing value)
     {

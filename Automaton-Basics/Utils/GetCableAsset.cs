@@ -1,4 +1,4 @@
-﻿using Automaton.Content.Block.ECable;
+﻿using Automaton.Content.Block.ACable;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -18,23 +18,17 @@ namespace Automaton.Utils
         /// <param name="api"></param>
         /// <param name="baseBlock"></param>
         /// <param name="material"></param>
-        /// <param name="indexQuantity"></param>
         /// <param name="indexType"></param>
-        public Block CableAsset(ICoreAPI api, CollectibleObject baseBlock, int indexVoltage, string material, int indexQuantity, int indexType)
+        public Block CableAsset(ICoreAPI api, CollectibleObject baseBlock, string material, int indexType)
         {
-            string[] t = new string[4];
-            string[] v = new string[4];
+            string[] t = new string[2];
+            string[] v = new string[2];
 
-            t[0] = "voltage";
-            t[1] = "material";
-            t[2] = "quantity";
-            t[3] = "type";
+            t[0] = "bit";
+            t[1] = "type";
 
-            v[0] = BlockECable.voltages[indexVoltage];
-            v[1] = material;
-            v[2] = BlockECable.quantitys[indexQuantity];
-            v[3] = BlockECable.types[indexType];
-
+            v[0] = material;
+            v[1] = BlockACable.types[indexType];
 
             var assetLocation = baseBlock.CodeWithVariants(t, v);
 

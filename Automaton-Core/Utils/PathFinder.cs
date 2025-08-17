@@ -313,7 +313,7 @@ public class PathFinder
         // выясняем какие грани соединены с сетью, не сгорели, или не обработаны еще
         for (int i = 0; i < 6; i++)
         {
-            if (part.Networks[i] == network && !part.eparams[i].burnout && !processFaces[i])
+            if (part.Networks[i] == network  && !processFaces[i]) // && !part.aparams[i].burnout
             {
                 hereConnections |= Connections & faceMasks[i];
             }

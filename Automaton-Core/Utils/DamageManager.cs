@@ -9,8 +9,10 @@ using Vintagestory.API.Server;
 
 namespace Automaton.Utils
 {
+    /*
     public class DamageManager
     {
+        
         //урон в зависимости от напряжения в проводе
         public static readonly Dictionary<int, float> DAMAGE_AMOUNT = new Dictionary<int, float>
         {
@@ -143,7 +145,7 @@ namespace Automaton.Utils
         /// <param name="part"></param>
         void Burnout(int i, ref NetworkPart part)
         {
-            part.eparams[i].prepareForBurnout(3);
+            part.aparams[i].prepareForBurnout(3);
         }
 
 
@@ -158,7 +160,7 @@ namespace Automaton.Utils
         /// <param name="facing"></param>
         /// <param name="AllEparams"></param>
         /// <param name="block"></param>
-        public void DamageEntity(IWorldAccessor world, Entity entity, BlockPos pos, BlockFacing facing, EParams[] AllEparams, Block block, float specifiedDamage=0.0f)
+        public void DamageEntity(IWorldAccessor world, Entity entity, BlockPos pos, BlockFacing facing, AParams[] AllEparams, Block block, float specifiedDamage=0.0f)
         {
             if (System == null) // Если система Automaton не инициализирована, ничего не делаем
                 return;
@@ -323,7 +325,7 @@ namespace Automaton.Utils
             {
                 for (int i = 0; i < 6; i++)
                 {
-                    if (!part.eparams[i].burnout && !part.eparams[i].isolatedEnvironment && powered[i])
+                    if (!part.aparams[i].burnout && !part.aparams[i].isolatedEnvironment && powered[i])
                     {
                         Burnout(i, ref part);
                         updated = true;
@@ -351,7 +353,7 @@ namespace Automaton.Utils
                 {
                     for (int i = 0; i < 6; i++)
                     {
-                        if (!part.eparams[i].burnout && !part.eparams[i].isolatedEnvironment && powered[i])
+                        if (!part.aparams[i].burnout && !part.aparams[i].isolatedEnvironment && powered[i])
                         {
                             Burnout(i, ref part);
                             updated = true;
@@ -382,7 +384,7 @@ namespace Automaton.Utils
                     {
                         for (int i = 0; i < 6; i++)
                         {
-                            if (!part.eparams[i].burnout && !part.eparams[i].isolatedEnvironment && powered[i])
+                            if (!part.aparams[i].burnout && !part.aparams[i].isolatedEnvironment && powered[i])
                             {
                                 Burnout(i, ref part);
                                 updated = true;
@@ -392,14 +394,16 @@ namespace Automaton.Utils
                 }
             }
 
-            /* для отладки
-            if (updated)
-            {
-                isRaining = isRaining;
-            }
-            */
+            // для отладки
+            //if (updated)
+            //{
+            //    isRaining = isRaining;
+            //}
+            
 
             return updated;
         }
     }
+
+    */
 }

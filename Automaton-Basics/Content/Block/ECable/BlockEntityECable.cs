@@ -6,7 +6,8 @@ using Vintagestory.API.Util;
 
 namespace Automaton.Content.Block.ECable
 {
-    public class BlockEntityECable : BlockEntityEBase
+    /*
+    public class BlockEntityACable : BlockEntityABase
     {
         private Facing switches = Facing.None;
         private Facing orientation = Facing.None;
@@ -69,4 +70,5 @@ namespace Automaton.Content.Block.ECable
             }
         }
     }
+    */
 }

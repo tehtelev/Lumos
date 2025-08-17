@@ -16,7 +16,7 @@
         public int NumberOfConsumers;
         public int NumberOfProducers;
         public int NumberOfTransformators;
-        public EParams eParamsInNetwork = new();
+        public AParams AParamsInNetwork = new();
         public float current;
 
         /// <summary>
@@ -35,7 +35,7 @@
             NumberOfConsumers = 0;
             NumberOfProducers = 0;
             NumberOfTransformators = 0;
-            eParamsInNetwork = new();
+            AParamsInNetwork = new();
             current = 0f;
         }
     }
