@@ -145,7 +145,7 @@ namespace Automaton.Content.Block.ACable
             }
 
             // обновляем текущий блок с кабелем 
-
+            
             if ((entity.Connection & facing) == 0)  //мы навелись уже на существующий кабель?
             {
                 //проверка на сплошную соседнюю грань
@@ -178,8 +178,8 @@ namespace Automaton.Content.Block.ACable
                     if (!CanAddCableToFace(block.Code, currentGameMode, byItemStack, 1))
                         return false;
 
-                    if (currentGameMode == EnumGameMode.Creative) // чтобы в креативе не уменьшало стак
-                        byItemStack.StackSize += 1;
+                    //if (currentGameMode == EnumGameMode.Creative) // чтобы в креативе не уменьшало стак
+                    //    byItemStack.StackSize += 1;
 
                     var newEparams = new AParams(material);
                     entity.Aparams = (newEparams, faceIndex);
@@ -189,6 +189,10 @@ namespace Automaton.Content.Block.ACable
 
                 entity.Connection |= facing;
                 entity.MarkDirty(true);
+            }
+            else
+            {
+                return false; // уже есть кабель в этом направлении
             }
 
             return true;
