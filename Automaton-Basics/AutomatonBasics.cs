@@ -1,15 +1,16 @@
-﻿using Automaton.Content.Block.AConnector;
+﻿using Automaton.Content.Block;
+using Automaton.Content.Block.ABus;
+using Automaton.Content.Block.ACable;
+using Automaton.Content.Block.AConnector;
 using Automaton.Content.Block.EGenerator;
 using Automaton.Content.Block.EMotor;
-using Vintagestory.API.Common;
-using Automaton.Content.Block;
-using Vintagestory.API.Client;
-using Automaton.Content.Block.ACable;
-using Automaton.Content.Block.ETransformator;
 using Automaton.Content.Block.ETermoGenerator;
+using Automaton.Content.Block.ETransformator;
 using Automaton.Content.Block.Termoplastini;
-using Vintagestory.API.Config;
 using System.Collections.Generic;
+using Vintagestory.API.Client;
+using Vintagestory.API.Common;
+using Vintagestory.API.Config;
 
 
 
@@ -63,7 +64,9 @@ public class AutomatonBasics : ModSystem
         api.RegisterBlockEntityClass("BlockEntityACable", typeof(BlockEntityACable));
         api.RegisterBlockEntityBehaviorClass("BEBehaviorACable", typeof(BEBehaviorACable));
 
-        
+        api.RegisterBlockClass("BlockABus", typeof(BlockABus));
+        api.RegisterBlockEntityClass("BlockEntityABus", typeof(BlockEntityABus));
+        api.RegisterBlockEntityBehaviorClass("BEBehaviorABus", typeof(BEBehaviorABus));
 
 
 

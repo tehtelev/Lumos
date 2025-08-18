@@ -1,4 +1,5 @@
-﻿using Automaton.Content.Block.ACable;
+﻿using Automaton.Content.Block.ABus;
+using Automaton.Content.Block.ACable;
 using System.Linq;
 using Vintagestory.API.Common;
 using Vintagestory.API.MathTools;
@@ -54,7 +55,7 @@ namespace Automaton.Utils
         /// <param name="hitPosition"></param>
         /// <param name="entity"></param>
         /// <returns></returns>
-        public Facing SelectionFacing(CacheDataKey key, Vec3d hitPosition, BlockEntity? entity)
+        public Facing SelectionFacing(BlockACable.CacheDataKey key, Vec3d hitPosition, BlockEntity? entity)
         {
 
             var selectedFacing = (
@@ -76,6 +77,42 @@ namespace Automaton.Utils
                             (current, selectionFacing) =>
                                 current | selectionFacing
                     );
+
+
+            return selectedFacing;
+        }
+
+
+
+        /// <summary>
+        /// Выводит направления, на которые наведен курсор
+        /// </summary>
+        /// <param name="key"></param>
+        /// <param name="hitPosition"></param>
+        /// <param name="entity"></param>
+        /// <returns></returns>
+        public Facing SelectionFacing(BlockABus.CacheDataKey key, Vec3d hitPosition, BlockEntity? entity)
+        {
+
+            var selectedFacing = (
+                    from keyValuePair in BlockABus.CalculateBoxes(
+                        key,
+                        BlockABus.SelectionBoxesCache,
+                        (entity as BlockEntityABus)!
+                    )
+                    let selectionFacing = keyValuePair.Key
+                    let selectionBoxes = keyValuePair.Value
+                    from selectionBox in selectionBoxes
+                    where selectionBox.Clone()
+                        .OmniGrowBy(0.01f)
+                        .Contains(hitPosition.X, hitPosition.Y, hitPosition.Z)
+                    select selectionFacing
+                )
+                .Aggregate(
+                    Facing.None,
+                    (current, selectionFacing) =>
+                        current | selectionFacing
+                );
 
 
             return selectedFacing;

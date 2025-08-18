@@ -1,4 +1,5 @@
-﻿using Automaton.Content.Block.EGenerator;
+﻿using Automaton.Content.Block.ACable;
+using Automaton.Content.Block.EGenerator;
 using Automaton.Content.Block.ETermoGenerator;
 using Automaton.Interface;
 using Automaton.Utils;
@@ -11,12 +12,11 @@ using Vintagestory.API.Common;
 using Vintagestory.API.Config;
 using Vintagestory.API.MathTools;
 
-namespace Automaton.Content.Block.ECable
+namespace Automaton.Content.Block.ABus
 {
-    /*
-    public class BEBehaviorACable : BlockEntityBehavior, IAutomaticConductor
+    public class BEBehaviorABus : BlockEntityBehavior, IAutomaticConductor
     {
-        public BEBehaviorACable(BlockEntity blockentity) : base(blockentity)
+        public BEBehaviorABus(BlockEntity blockentity) : base(blockentity)
         {
         }
 
@@ -31,7 +31,7 @@ namespace Automaton.Content.Block.ECable
             base.GetBlockInfo(forPlayer, stringBuilder);
 
             
-            if (Api.World.BlockAccessor.GetBlockEntity(Blockentity.Pos) is not BlockEntityACable entity)
+            if (Api.World.BlockAccessor.GetBlockEntity(Blockentity.Pos) is not BlockEntityABus entity)
                 return;
 
 
@@ -47,21 +47,12 @@ namespace Automaton.Content.Block.ECable
         public void Update()
         {
             //смотрим надо ли обновить модельку когда сгорает прибор
-            if (Api.World.BlockAccessor.GetBlockEntity(Blockentity.Pos) is BlockEntityACable
+            if (Api.World.BlockAccessor.GetBlockEntity(Blockentity.Pos) is BlockEntityABus
                 {
-                    AllEparams: not null
+                    AllAparams: not null
                 } entity)
             {
-                var hasBurnout = entity.AllEparams.Any(e => e.burnout);
-                if (hasBurnout)
-                    ParticleManager.SpawnBlackSmoke(Api.World, Pos.ToVec3d().Add(0.1, 0, 0.1));
 
-
-                bool prepareBurnout = entity.AllEparams.Any(e => e.ticksBeforeBurnout > 0);
-                if (prepareBurnout)
-                {
-                    ParticleManager.SpawnWhiteSlowSmoke(this.Api.World, Pos.ToVec3d().Add(0.1, 0, 0.1));
-                }
 
             }
 
@@ -70,5 +61,4 @@ namespace Automaton.Content.Block.ECable
 
 
     }
-    */
 }

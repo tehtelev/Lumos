@@ -1,4 +1,4 @@
-﻿using Automaton.Content.Block.ACable;
+﻿using Automaton.Content.Block.ABus;
 using System;
 using Vintagestory.API.Client;
 using Vintagestory.API.Common;
@@ -6,7 +6,7 @@ using Vintagestory.API.MathTools;
 
 namespace Automaton.Utils;
 
-public class BlockVariants
+public class BlockVariantsBus
 {
     public readonly Cuboidf[] CollisionBoxes= Array.Empty<Cuboidf>();
     public readonly MeshData? MeshData;
@@ -19,17 +19,17 @@ public class BlockVariants
     /// <param name="baseBlock"></param>
     /// <param name="material"></param>
     /// <param name="indexType"></param>
-    public BlockVariants(ICoreAPI api, CollectibleObject baseBlock, string material, int indexType)
+    public BlockVariantsBus(ICoreAPI api, CollectibleObject baseBlock, string material, int indexType)
     {
 
-        string[] t = new string[2];
-        string[] v = new string[2];
+        string[] t = new string[1];
+        string[] v = new string[1];
 
-        t[0] = "bit";
-        t[1] = "type";
+        
+        t[0] = "type";
 
-        v[0] = material;
-        v[1] = BlockACable.types[indexType];
+        
+        v[0] = BlockABus.types[indexType];
 
         var assetLocation = baseBlock.CodeWithVariants(t, v);
         var block = api.World.GetBlock(assetLocation);
