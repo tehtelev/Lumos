@@ -7,30 +7,38 @@
 	"textureWidth": 16,
 	"textureHeight": 16,
 	"textureSizes": {
-		"black": [32,32],
-		"red": [32,32],
-		"yellow": [32,32],
-		"green": [32,32],
-		"blue": [32,32],
-		"brown": [32,32],
-		"orange": [32,32],
-		"violet": [32,32]
+		"black": [16,16],
+		"red": [16,16],
+		"yellow": [16,16],
+		"green": [16,16],
+		"blue": [16,16],
+		"brown": [16,16],
+		"orange": [16,16],
+		"violet": [16,16]
 	},
-
+	"textures": {
+		"black": "C:/Users/tehtelev/source/repos/tehtelev/Automaton/Automaton-Basics/assets/automatonbasics/textures/block/bright/black",
+		"blue": "C:/Users/tehtelev/source/repos/tehtelev/Automaton/Automaton-Basics/assets/automatonbasics/textures/block/bright/blue",
+		"brown": "C:/Users/tehtelev/source/repos/tehtelev/Automaton/Automaton-Basics/assets/automatonbasics/textures/block/bright/brown",
+		"green": "C:/Users/tehtelev/source/repos/tehtelev/Automaton/Automaton-Basics/assets/automatonbasics/textures/block/bright/green",
+		"orange": "C:/Users/tehtelev/source/repos/tehtelev/Automaton/Automaton-Basics/assets/automatonbasics/textures/block/bright/orange",
+		"red": "C:/Users/tehtelev/source/repos/tehtelev/Automaton/Automaton-Basics/assets/automatonbasics/textures/block/bright/red",
+		"violet": "C:/Users/tehtelev/source/repos/tehtelev/Automaton/Automaton-Basics/assets/automatonbasics/textures/block/bright/violet",
+		"yellow": "C:/Users/tehtelev/source/repos/tehtelev/Automaton/Automaton-Basics/assets/automatonbasics/textures/block/bright/yellow"
+	},
 	"elements": [
 		{
 			"name": "Cube",
-			"from": [ 8.05, 0.0, 7.6 ],
-			"to": [ 8.85, 0.4, 16.4 ],
-			"rotationOrigin": [ 8.0, 0.0, 8.0 ],
-			"rotationY": -180.0,
+			"from": [ 8.05, 0.0, -0.4 ],
+			"to": [ 8.85, 0.4, 8.4 ],
+			"rotationOrigin": [ 8.0, 0.0, 0.0 ],
 			"faces": {
-				"north": { "texture": "#brown", "uv": [ 3.0, 5.0, 4.0, 6.0 ] },
-				"east": { "texture": "#brown", "uv": [ 0.0, 7.0, 8.0, 8.0 ] },
-				"south": { "texture": "#brown", "uv": [ 9.0, 6.0, 10.0, 7.0 ] },
-				"west": { "texture": "#brown", "uv": [ 0.0, 4.0, 8.0, 5.0 ] },
-				"up": { "texture": "#brown", "uv": [ 5.0, 0.0, 6.0, 8.0 ] },
-				"down": { "texture": "#brown", "uv": [ 11.0, 0.0, 12.0, 8.0 ] }
+				"north": { "texture": "#brown", "uv": [ 3.0, 5.0, 3.5, 5.5 ] },
+				"east": { "texture": "#brown", "uv": [ 0.0, 7.0, 8.5, 7.5 ] },
+				"south": { "texture": "#brown", "uv": [ 9.0, 6.0, 9.5, 6.5 ] },
+				"west": { "texture": "#brown", "uv": [ 0.0, 4.0, 8.5, 4.5 ] },
+				"up": { "texture": "#brown", "uv": [ 5.0, 0.0, 5.5, 8.5 ] },
+				"down": { "texture": "#brown", "uv": [ 11.0, 0.0, 11.5, 8.5 ] }
 			},
 			"children": [
 				{
