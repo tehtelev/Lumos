@@ -5,7 +5,7 @@
     "op": "add",
     "value": [
       {
-        "name": "BEBehaviorECable"
+        "name": "BEBehaviorACable"
       },
       {
         "name": "Automaton"
@@ -16,7 +16,7 @@
     "file": "game:blocktypes/metal/metalblock",
     "path": "/entityClass",
     "op": "add",
-    "value": "BlockEntityEConnector"
+    "value": "BlockEntityAConnector"
   },
   {
     "file": "game:blocktypes/metal/metalblock",
