@@ -24,241 +24,134 @@ namespace Automaton.Content.Block.ABus
 
         public readonly static Dictionary<CacheDataKey, MeshData> MeshDataCache = new();
 
+        private static readonly ConcurrentDictionary<(string material, int variant), BlockVariantsBus> VariantCache
+            = new();
+
         /// <summary>
-        /// Таблица всех поворотов
+        /// Таблица поворотов для разных направлений и количества проводов
         /// </summary>
-        private static readonly Dictionary<Facing, (float x, float y, float z)> RotationMapNesw = new()
+        private static readonly Dictionary<(int count, Facing facing), (int variant, (float x, float y, float z) rot)> RotationLookup
+            = new()
         {
-            // North
-            { Facing.NorthAll, (90, 0, 0) },
-            // East
-            { Facing.EastAll, (90, 0, 90) },
-            // South
-            { Facing.SouthAll,   (270, 90, 0) },
-            // West
-            { Facing.WestAll,    (0, 0, 270) },
-            // Up
-            { Facing.UpAll,  (180, 90, 0) },
-            // Down
-            { Facing.DownAll, (0, 0, 0) }
+    // === 1 провод ===
+    // N1
+    { (1, Facing.NorthEast), (1, (90, 270, 0)) },
+    { (1, Facing.NorthUp),   (1, (90, 0, 0)) },
+    { (1, Facing.EastSouth), (1, (180, 0, 90)) },
+    { (1, Facing.EastUp),    (1, (90, 0, 90)) },
+    { (1, Facing.SouthWest), (1, (270, 90, 0)) },
+    { (1, Facing.SouthDown), (1, (270, 0, 0)) },
+    { (1, Facing.WestNorth), (1, (0, 0, 270)) },
+    { (1, Facing.WestDown),  (1, (270, 0, 270)) },
+    { (1, Facing.UpSouth),   (1, (0, 180, 180)) },
+    { (1, Facing.UpWest),    (1, (0, 90, 180)) },
+    { (1, Facing.DownNorth), (1, (0, 0, 0)) },
+    { (1, Facing.DownEast),  (1, (0, 270, 0)) },
+
+    // N2
+    { (1, Facing.NorthWest), (2, (90, 90, 0)) },
+    { (1, Facing.NorthDown), (2, (90, 180, 0)) },
+    { (1, Facing.EastNorth), (2, (0, 0, 90)) },
+    { (1, Facing.EastDown),  (2, (270, 0, 90)) },
+    { (1, Facing.SouthEast), (2, (270, 270, 0)) },
+    { (1, Facing.SouthUp),   (2, (270, 180, 0)) },
+    { (1, Facing.WestSouth), (2, (180, 0, 270)) },
+    { (1, Facing.WestUp),    (2, (90, 0, 270)) },
+    { (1, Facing.UpNorth),   (2, (0, 0, 180)) },
+    { (1, Facing.UpEast),    (2, (0, 270, 180)) },
+    { (1, Facing.DownSouth), (2, (0, 180, 0)) },
+    { (1, Facing.DownWest),  (2, (0, 90, 0)) },
+
+    // === 2 провода ===
+    // Ne1
+    { (2, Facing.NorthUp | Facing.NorthEast),   (3, (90, 0, 0)) },
+    { (2, Facing.EastUp  | Facing.EastSouth),   (3, (90, 0, 90)) },
+    { (2, Facing.SouthWest | Facing.SouthDown), (3, (270, 90, 0)) },
+    { (2, Facing.WestNorth | Facing.WestDown),  (3, (0, 0, 270)) },
+    { (2, Facing.UpWest | Facing.UpSouth),      (3, (0, 90, 180)) },
+    { (2, Facing.DownNorth | Facing.DownEast),  (3, (0, 0, 0)) },
+
+    // Ne2
+    { (2, Facing.NorthDown | Facing.NorthWest), (4, (90, 180, 0)) },
+    { (2, Facing.EastDown  | Facing.EastNorth), (4, (270, 0, 90)) },
+    { (2, Facing.SouthEast | Facing.SouthUp),   (4, (270, 270, 0)) },
+    { (2, Facing.WestSouth | Facing.WestUp),    (4, (180, 0, 270)) },
+    { (2, Facing.UpEast | Facing.UpNorth),      (4, (0, 270, 180)) },
+    { (2, Facing.DownSouth | Facing.DownWest),  (4, (0, 180, 0)) },
+
+    // Ne3
+    { (2, Facing.NorthEast | Facing.NorthDown), (5, (90, 270, 0)) },
+    { (2, Facing.EastSouth | Facing.EastDown),  (5, (180, 0, 90)) },
+    { (2, Facing.SouthDown | Facing.SouthEast), (5, (270, 0, 0)) },
+    { (2, Facing.WestDown  | Facing.WestSouth), (5, (270, 0, 270)) },
+    { (2, Facing.UpSouth | Facing.UpEast),      (5, (0, 180, 180)) },
+    { (2, Facing.DownEast | Facing.DownSouth),  (5, (0, 270, 0)) },
+
+    // Ne4
+    { (2, Facing.NorthWest | Facing.NorthUp),   (6, (90, 90, 0)) },
+    { (2, Facing.EastNorth | Facing.EastUp),    (6, (0, 0, 90)) },
+    { (2, Facing.SouthUp   | Facing.SouthWest), (6, (270, 180, 0)) },
+    { (2, Facing.WestUp    | Facing.WestNorth), (6, (90, 0, 270)) },
+    { (2, Facing.UpNorth   | Facing.UpWest),    (6, (0, 0, 180)) },
+    { (2, Facing.DownWest  | Facing.DownNorth), (6, (0, 90, 0)) },
+
+    // Ns
+    { (2, Facing.NorthEast | Facing.NorthWest), (7, (90, 270, 0)) },
+    { (2, Facing.NorthUp | Facing.NorthDown),   (7, (90, 0, 0)) },
+    { (2, Facing.EastNorth | Facing.EastSouth), (7, (180, 0, 90)) },
+    { (2, Facing.EastUp | Facing.EastDown),     (7, (90, 0, 90)) },
+    { (2, Facing.SouthEast | Facing.SouthWest), (7, (270, 90, 0)) },
+    { (2, Facing.SouthUp | Facing.SouthDown),   (7, (270, 0, 0)) },
+    { (2, Facing.WestNorth | Facing.WestSouth), (7, (0, 0, 270)) },
+    { (2, Facing.WestUp | Facing.WestDown),     (7, (270, 0, 270)) },
+    { (2, Facing.UpNorth | Facing.UpSouth),     (7, (0, 180, 180)) },
+    { (2, Facing.UpWest | Facing.UpEast),       (7, (0, 90, 180)) },
+    { (2, Facing.DownNorth | Facing.DownSouth), (7, (0, 0, 0)) },
+    { (2, Facing.DownWest | Facing.DownEast),   (7, (0, 270, 0)) },
+
+    // === 3 провода ===
+    // Nes1
+    { (3, Facing.NorthUp | Facing.NorthEast | Facing.NorthDown), (8, (90, 0, 0)) },
+    { (3, Facing.EastUp | Facing.EastSouth | Facing.EastDown),   (8, (90, 0, 90)) },
+    { (3, Facing.SouthWest | Facing.SouthDown | Facing.SouthEast), (8, (270, 90, 0)) },
+    { (3, Facing.WestNorth | Facing.WestDown | Facing.WestSouth), (8, (0, 0, 270)) },
+    { (3, Facing.UpWest | Facing.UpSouth | Facing.UpEast),       (8, (0, 90, 180)) },
+    { (3, Facing.DownNorth | Facing.DownEast | Facing.DownSouth), (8, (0, 0, 0)) },
+
+    // Nes2
+    { (3, Facing.NorthDown | Facing.NorthWest | Facing.NorthUp),  (9, (90, 180, 0)) },
+    { (3, Facing.EastDown | Facing.EastNorth | Facing.EastUp),    (9, (270, 0, 90)) },
+    { (3, Facing.SouthEast | Facing.SouthUp | Facing.SouthWest),  (9, (270, 270, 0)) },
+    { (3, Facing.WestSouth | Facing.WestUp | Facing.WestNorth),   (9, (180, 0, 270)) },
+    { (3, Facing.UpEast | Facing.UpNorth | Facing.UpWest),        (9, (0, 270, 180)) },
+    { (3, Facing.DownSouth | Facing.DownWest | Facing.DownNorth), (9, (0, 180, 0)) },
+
+    // Nes3
+    { (3, Facing.NorthEast | Facing.NorthDown | Facing.NorthWest), (10, (90, 270, 0)) },
+    { (3, Facing.EastSouth | Facing.EastDown | Facing.EastNorth),  (10, (180, 0, 90)) },
+    { (3, Facing.SouthDown | Facing.SouthEast | Facing.SouthUp),   (10, (270, 0, 0)) },
+    { (3, Facing.WestDown | Facing.WestSouth | Facing.WestUp),     (10, (270, 0, 270)) },
+    { (3, Facing.UpSouth | Facing.UpEast | Facing.UpNorth),        (10, (0, 180, 180)) },
+    { (3, Facing.DownEast | Facing.DownSouth | Facing.DownWest),   (10, (0, 270, 0)) },
+
+    // Nes4
+    { (3, Facing.NorthWest | Facing.NorthUp | Facing.NorthEast),   (11, (90, 90, 0)) },
+    { (3, Facing.EastNorth | Facing.EastUp | Facing.EastSouth),    (11, (0, 0, 90)) },
+    { (3, Facing.SouthUp | Facing.SouthWest | Facing.SouthDown),   (11, (270, 180, 0)) },
+    { (3, Facing.WestUp | Facing.WestNorth | Facing.WestDown),     (11, (90, 0, 270)) },
+    { (3, Facing.UpNorth | Facing.UpWest | Facing.UpSouth),        (11, (0, 0, 180)) },
+    { (3, Facing.DownWest | Facing.DownNorth | Facing.DownEast),   (11, (0, 90, 0)) },
+
+    // === 4 провода ===
+    // Nesw
+    { (4, Facing.NorthAll), (12, (90, 0, 0)) },
+    { (4, Facing.EastAll),  (12, (90, 0, 90)) },
+    { (4, Facing.SouthAll), (12, (270, 90, 0)) },
+    { (4, Facing.WestAll),  (12, (0, 0, 270)) },
+    { (4, Facing.UpAll),    (12, (180, 90, 0)) },
+    { (4, Facing.DownAll),  (12, (0, 0, 0)) },
         };
 
-
-        // Таблица всех поворотов
-        private static readonly Dictionary<Facing, (float x, float y, float z)> RotationMapN1 = new()
-        {
-            // North
-            { Facing.NorthEast, (90, 270, 0) },
-            { Facing.NorthUp,   (90, 0, 0) },
-            // East
-            { Facing.EastSouth, (180, 0, 90) },
-            { Facing.EastUp,    (90, 0, 90) },
-            // South
-            { Facing.SouthWest, (270, 90, 0) },
-            { Facing.SouthDown, (270, 0, 0) },
-            // West
-            { Facing.WestNorth, (0, 0, 270) },
-            { Facing.WestDown,  (270, 0, 270) },
-            // Up
-            { Facing.UpSouth, (0, 180, 180) },
-            { Facing.UpWest,  (0, 90, 180) },
-            // Down
-            { Facing.DownNorth, (0, 0, 0) },
-            { Facing.DownEast,  (0, 270, 0) },
-        };
-
-
-        // Таблица всех поворотов
-        private static readonly Dictionary<Facing, (float x, float y, float z)> RotationMapN2 = new()
-        {
-            // North
-            { Facing.NorthWest, (90, 90, 0) },//2
-            { Facing.NorthDown, (90, 180, 0) },//2
-            // East
-            { Facing.EastNorth, (0, 0, 90) },//2
-            { Facing.EastDown,  (270, 0, 90) },//2
-            // South
-            { Facing.SouthEast, (270, 270, 0) },//2
-            { Facing.SouthUp,   (270, 180, 0) },//2
-            // West
-            { Facing.WestSouth, (180, 0, 270) },//2
-            { Facing.WestUp,    (90, 0, 270) }, //2
-            // Up
-            { Facing.UpNorth, (0, 0, 180) }, //2
-            { Facing.UpEast,  (0, 270, 180) },//2
-            // Down
-            { Facing.DownSouth, (0, 180, 0) },//2
-            { Facing.DownWest,  (0, 90, 0) },//2
-        };
-
-
-        // Таблица всех поворотов
-        private static readonly Dictionary<Facing, (float x, float y, float z)> RotationMapNe1 = new()
-        {
-            // North
-            { Facing.NorthUp | Facing.NorthEast,   (90, 0, 0) },
-            // East
-            { Facing.EastUp | Facing.EastSouth,    (90, 0, 90) },
-            // South
-            { Facing.SouthWest | Facing.SouthDown, (270, 90, 0) },
-            // West
-            { Facing.WestNorth | Facing.WestDown, (0, 0, 270) },
-            // Up
-            { Facing.UpWest | Facing.UpSouth,  (0, 90, 180) },
-            // Down
-            { Facing.DownNorth | Facing.DownEast, (0, 0, 0) },
-        };
-
-        // Таблица всех поворотов
-        private static readonly Dictionary<Facing, (float x, float y, float z)> RotationMapNe2 = new()
-        {
-            // North
-            { Facing.NorthDown | Facing.NorthWest, (90, 180, 0) },
-            // East
-            { Facing.EastDown | Facing.EastNorth,  (270, 0, 90) },
-            // South
-            { Facing.SouthEast | Facing.SouthUp, (270, 270, 0) },
-            // West
-            { Facing.WestSouth | Facing.WestUp, (180, 0, 270) },
-            // Up
-            { Facing.UpEast | Facing.UpNorth,  (0, 270, 180) },
-            // Down
-            { Facing.DownSouth | Facing.DownWest, (0, 180, 0) },
-
-        };
-
-
-
-        // Таблица всех поворотов
-        private static readonly Dictionary<Facing, (float x, float y, float z)> RotationMapNe3 = new()
-        {
-            // North
-            { Facing.NorthEast | Facing.NorthDown, (90, 270, 0) },
-            // East
-            { Facing.EastSouth | Facing.EastDown, (180, 0, 90) },
-            // South
-            { Facing.SouthDown | Facing.SouthEast, (270, 0, 0) },
-            // West
-            { Facing.WestDown | Facing.WestSouth,  (270, 0, 270) },
-            // Up
-            { Facing.UpSouth | Facing.UpEast, (0, 180, 180) },
-            // Down
-            { Facing.DownEast | Facing.DownSouth,  (0, 270, 0) },
-
-        };
-
-        // Таблица всех поворотов
-        private static readonly Dictionary<Facing, (float x, float y, float z)> RotationMapNe4 = new()
-        {
-            // North
-            { Facing.NorthWest | Facing.NorthUp , (90, 90, 0) },//4
-            // East
-            { Facing.EastNorth | Facing.EastUp, (0, 0, 90) },//4
-            // South
-            { Facing.SouthUp | Facing.SouthWest,   (270, 180, 0) },//4
-            // West
-            { Facing.WestUp | Facing.WestNorth,    (90, 0, 270) },//4
-            // Up
-            { Facing.UpNorth | Facing.UpWest, (0, 0, 180) },//4
-            // Down
-            { Facing.DownWest | Facing.DownNorth,  (0, 90, 0) },//4
-        };
-
-
-        // Таблица всех поворотов
-        private static readonly Dictionary<Facing, (float x, float y, float z)> RotationMapNs = new()
-        {
-            // North
-            { Facing.NorthEast | Facing.NorthWest, (90, 270, 0) },
-            { Facing.NorthUp | Facing.NorthDown,   (90, 0, 0) },
-            // East
-            { Facing.EastNorth | Facing.EastSouth, (180, 0, 90) },
-            { Facing.EastUp | Facing.EastDown,    (90, 0, 90) },
-            // South
-            { Facing.SouthEast | Facing.SouthWest, (270, 90, 0) },
-            { Facing.SouthUp | Facing.SouthDown,   (270, 0, 0) },
-            // West
-            { Facing.WestNorth | Facing.WestSouth, (0, 0, 270) },
-            { Facing.WestUp | Facing.WestDown,    (270, 0, 270) },
-            // Up
-            { Facing.UpNorth | Facing.UpSouth, (0, 180, 180) },
-            { Facing.UpWest | Facing.UpEast,  (0, 90, 180) },
-            // Down
-            { Facing.DownNorth | Facing.DownSouth, (0, 0, 0) },
-            { Facing.DownWest | Facing.DownEast,  (0, 270, 0) },
-        };
-
-
-
-        // Таблица всех поворотов
-        private static readonly Dictionary<Facing, (float x, float y, float z)> RotationMapNes1 = new()
-        {
-            // North
-            { Facing.NorthUp   | Facing.NorthEast  | Facing.NorthDown,   (90, 0, 0) },   // норм
-            // East
-            { Facing.EastUp    | Facing.EastSouth  | Facing.EastDown,    (90, 0, 90) },  // норм
-            // South
-    { Facing.SouthWest | Facing.SouthDown  | Facing.SouthEast,   (270, 90, 0) }, // норм
-    // West
-    { Facing.WestNorth | Facing.WestDown   | Facing.WestSouth,   (0, 0, 270) },   // норм
-    // Up
-    { Facing.UpWest    | Facing.UpSouth    | Facing.UpEast,      (0, 90, 180) }, // норм
-    // Down
-    { Facing.DownNorth | Facing.DownEast   | Facing.DownSouth,   (0, 0, 0) },   // норм
-};
-
-
-        // Таблица всех поворотов
-        private static readonly Dictionary<Facing, (float x, float y, float z)> RotationMapNes2 = new()
-        {
-    // North
-    { Facing.NorthDown | Facing.NorthWest  | Facing.NorthUp,     (90, 180, 0) }, // цвета
-    // East
-    { Facing.EastDown  | Facing.EastNorth  | Facing.EastUp,      (270, 0, 90) }, // цвета 
-    // South
-    { Facing.SouthEast | Facing.SouthUp    | Facing.SouthWest,   (270, 270, 0) },// цвета 
-    // West
-    { Facing.WestSouth | Facing.WestUp     | Facing.WestNorth,   (180, 0, 270) }, // цвета 
-    // Up
-    { Facing.UpEast    | Facing.UpNorth    | Facing.UpWest,      (0, 270, 180) },// цвета 
-    // Down
-    { Facing.DownSouth | Facing.DownWest   | Facing.DownNorth,   (0, 180, 0) }, // цвета 
-
-};
-
-        // Таблица всех поворотов
-        private static readonly Dictionary<Facing, (float x, float y, float z)> RotationMapNes3 = new()
-        {
-    // North
-    { Facing.NorthEast | Facing.NorthDown  | Facing.NorthWest,   (90, 270, 0) }, // порядок
-    // East
-    { Facing.EastSouth | Facing.EastDown   | Facing.EastNorth,   (180, 0, 90) }, // порядок
-    // South
-    { Facing.SouthDown | Facing.SouthEast  | Facing.SouthUp,     (270, 0, 0) },  // порядок
-    // West
-    { Facing.WestDown  | Facing.WestSouth  | Facing.WestUp,      (270, 0, 270) }, // порядок
-    // Up
-    { Facing.UpSouth   | Facing.UpEast     | Facing.UpNorth,     (0, 180, 180) },// порядок
-    // Down
-    { Facing.DownEast  | Facing.DownSouth  | Facing.DownWest,    (0, 270, 0) }, // порядок
-};
-
-        // Таблица всех поворотов
-        private static readonly Dictionary<Facing, (float x, float y, float z)> RotationMapNes4 = new()
-        {
-    // North
-    { Facing.NorthWest | Facing.NorthUp    | Facing.NorthEast,   (90, 90, 0) },  // цвета и порядок
-    // East
-    { Facing.EastNorth | Facing.EastUp     | Facing.EastSouth,   (0, 0, 90) },   // цвета и порядок
-    // South
-    { Facing.SouthUp   | Facing.SouthWest  | Facing.SouthDown,   (270, 180, 0) },// цвета и порядок
-    // West
-    { Facing.WestUp    | Facing.WestNorth  | Facing.WestDown,    (90, 0, 270) },  // цвета и порядок
-    // Up
-    { Facing.UpNorth   | Facing.UpWest     | Facing.UpSouth,     (0, 0, 180) },  // цвета и порядок
-    // Down
-    { Facing.DownWest  | Facing.DownNorth  | Facing.DownEast,    (0, 90, 0) },  // цвета и порядок
-};
 
 
         public float res;                       //удельное сопротивление из ассета
@@ -297,6 +190,8 @@ namespace Automaton.Content.Block.ABus
             BlockABus.CollisionBoxesCache.Clear();
             BlockABus.SelectionBoxesCache.Clear();
             BlockABus.MeshDataCache.Clear();
+            BlockABus.VariantCache.Clear();
+            BlockABus.RotationLookup.Clear();
         }
 
         public override bool IsReplacableBy(Vintagestory.API.Common.Block block)
@@ -729,6 +624,31 @@ namespace Automaton.Content.Block.ABus
 
 
         /// <summary>
+        /// Вариант и поворот для шейпов
+        /// </summary>
+        /// <param name="api"></param>
+        /// <param name="block"></param>
+        /// <param name="material"></param>
+        /// <param name="count"></param>
+        /// <param name="connection"></param>
+        /// <returns></returns>
+        private static (BlockVariantsBus? variant, (float x, float y, float z) rot)? GetVariantAndRotation(
+            ICoreAPI api, Vintagestory.API.Common.Block block, string material, int count, Facing connection)
+        {
+            if (!RotationLookup.TryGetValue((count, connection), out var result))
+                return null;
+
+            var bus = VariantCache.GetOrAdd((material, result.variant),
+                key => new BlockVariantsBus(api, block, key.material, key.variant));
+
+            return (bus, result.rot);
+        }
+
+
+
+
+
+        /// <summary>
         /// Отрисовщик шейпов
         /// </summary>
         /// <param name="sourceMesh"></param>
@@ -752,116 +672,23 @@ namespace Automaton.Content.Block.ABus
 
                     foreach (var face in FacingHelper.Faces(Facing.AllAll))
                     {
-                        int bufIndex = face.Index; // индекс грани 
-                        var aparam = entity.AllAparams![bufIndex];
-
-                        BlockVariantsBus partVariant = null;
-
-                        var connection = key.Connection & FacingHelper.FromFace(face);    //берем направления только в этой грани
-                        var count = FacingHelper.Count(connection); // количество проводов в этой грани
+                        var connection = key.Connection & FacingHelper.FromFace(face);
+                        var count = FacingHelper.Count(connection);
                         if (count <= 0)
-                            continue; // если проводов нет, пропускаем
+                            continue;
 
-                        MeshData? rotated = null;
-                        (float, float, float) xyz;
+                        var aparam = entity.AllAparams![face.Index];
+                        var info = GetVariantAndRotation(api, entity.Block, aparam.material, count, connection);
+                        if (info == null)
+                            continue;
 
-                        if (count == 1)
-                        {
-                            if (!RotationMapN1.TryGetValue(connection, out xyz))
-                            {
-                                if (!RotationMapN2.TryGetValue(connection, out xyz))
-                                    continue;
-                                partVariant = new BlockVariantsBus(api, entity.Block, aparam.material, 2);
-                            }
-                            else
-                            {
-                                partVariant = new BlockVariantsBus(api, entity.Block, aparam.material, 1);
-                            }
-                            rotated = partVariant.MeshData?.Clone().Rotate(origin, xyz.Item1 * GameMath.DEG2RAD, xyz.Item2 * GameMath.DEG2RAD, xyz.Item3 * GameMath.DEG2RAD);
-                        }
-                        else if (count == 2)
-                        {
+                        var (variant, rot) = info.Value;
+                        var rotatedMesh = variant!.MeshData?.Clone().Rotate(origin,
+                            rot.x * GameMath.DEG2RAD, rot.y * GameMath.DEG2RAD, rot.z * GameMath.DEG2RAD);
 
-                            if (!RotationMapNe1.TryGetValue(connection, out xyz))
-                            {
-                                if (!RotationMapNe2.TryGetValue(connection, out xyz))
-                                {
-                                    if (!RotationMapNe3.TryGetValue(connection, out xyz))
-                                    {
-                                        if (!RotationMapNe4.TryGetValue(connection, out xyz))
-                                        {
-                                            if (!RotationMapNs.TryGetValue(connection, out xyz))
-                                                continue;
-                                            partVariant = new BlockVariantsBus(api, entity.Block, aparam.material, 7);
-                                        }
-                                        else
-                                        {
-                                            partVariant = new BlockVariantsBus(api, entity.Block, aparam.material, 6);
-                                        }
-                                    }
-                                    else
-                                    {
-                                        partVariant = new BlockVariantsBus(api, entity.Block, aparam.material, 5);
-                                    }
-                                }
-                                else
-                                {
-                                    partVariant = new BlockVariantsBus(api, entity.Block, aparam.material, 4);
-                                }
-                            }
-                            else
-                            {
-                                partVariant = new BlockVariantsBus(api, entity.Block, aparam.material, 3);
-                            }
-                            rotated = partVariant.MeshData?.Clone().Rotate(origin, xyz.Item1 * GameMath.DEG2RAD, xyz.Item2 * GameMath.DEG2RAD, xyz.Item3 * GameMath.DEG2RAD);
-                        }
-                        else if (count == 3)
-                        {
-                            if (!RotationMapNes1.TryGetValue(connection, out xyz))
-                            {
-                                if (!RotationMapNes2.TryGetValue(connection, out xyz))
-                                {
-                                    if (!RotationMapNes3.TryGetValue(connection, out xyz))
-                                    {
-                                        if (!RotationMapNes4.TryGetValue(connection, out xyz))
-                                        {
-                                            continue;
-                                        }
-                                        else
-                                        {
-                                            partVariant = new BlockVariantsBus(api, entity.Block, aparam.material, 11);
-                                        }
-                                    }
-                                    else
-                                    {
-                                        partVariant = new BlockVariantsBus(api, entity.Block, aparam.material, 10);
-                                    }
-                                }
-                                else
-                                {
-                                    partVariant = new BlockVariantsBus(api, entity.Block, aparam.material, 9);
-                                }
-                            }
-                            else
-                            {
-                                partVariant = new BlockVariantsBus(api, entity.Block, aparam.material, 8);
-                            }
-                            rotated = partVariant.MeshData?.Clone().Rotate(origin, xyz.Item1 * GameMath.DEG2RAD, xyz.Item2 * GameMath.DEG2RAD, xyz.Item3 * GameMath.DEG2RAD);
-                        }
-                        else if (count == 4)
-                        {
-                            partVariant = new BlockVariantsBus(api, entity.Block, aparam.material, 12);
-                            if (!RotationMapNesw.TryGetValue(connection, out xyz))
-                                continue;
-                            rotated = partVariant.MeshData?.Clone().Rotate(origin, xyz.Item1 * GameMath.DEG2RAD, xyz.Item2 * GameMath.DEG2RAD, xyz.Item3 * GameMath.DEG2RAD);
-                        }
-
-
-
-                        AddMeshData(ref meshData, rotated);
+                        AddMeshData(ref meshData, rotatedMesh);
                     }
-
-                    BlockABus.MeshDataCache[key] = meshData!;
+                    MeshDataCache[key] = meshData!;
                 }
 
                 sourceMesh = meshData ?? sourceMesh;
@@ -869,6 +696,7 @@ namespace Automaton.Content.Block.ABus
 
             base.OnJsonTesselation(ref sourceMesh, ref lightRgbsByCorner, position, chunkExtBlocks, extIndex3d);
         }
+
 
 
         /// <summary>
@@ -890,118 +718,25 @@ namespace Automaton.Content.Block.ABus
 
                 foreach (var face in FacingHelper.Faces(Facing.AllAll))
                 {
-                    int bufIndex = face.Index; // индекс грани 
-                    var aparam = entity.AllAparams![bufIndex];
-
-                    Cuboidf[] partBoxes = null;
-                    Cuboidf[] rotated = null;
-
-
-
-                    var connection = key.Connection & FacingHelper.FromFace(face);    //берем направления только в этой грани
+                    var connection = key.Connection & FacingHelper.FromFace(face);
                     var count = FacingHelper.Count(connection);
-                    if (count <= 0) // если проводов нет, пропускаем
+                    if (count <= 0)
                         continue;
 
-                    (float, float, float) xyz;
-                    if (count == 1)
-                    {
-                        if (!RotationMapN1.TryGetValue(connection, out xyz))
-                        {
-                            if (!RotationMapN2.TryGetValue(connection, out xyz))
-                                continue;
-                            partBoxes = new BlockVariantsBus(entity.Api, entity.Block, aparam.material, 2).CollisionBoxes;
-                        }
-                        else
-                        {
-                            partBoxes = new BlockVariantsBus(entity.Api, entity.Block, aparam.material, 1).CollisionBoxes;
-                        }
-                        rotated = partBoxes.Select(b => b.RotatedCopy(xyz.Item1, xyz.Item2, xyz.Item3, origin)).ToArray();
-                    }
-                    else if (count == 2)
-                    {
-                        if (!RotationMapNe1.TryGetValue(connection, out xyz))
-                        {
-                            if (!RotationMapNe2.TryGetValue(connection, out xyz))
-                            {
-                                if (!RotationMapNe3.TryGetValue(connection, out xyz))
-                                {
-                                    if (!RotationMapNe4.TryGetValue(connection, out xyz))
-                                    {
-                                        if (!RotationMapNs.TryGetValue(connection, out xyz))
-                                            continue;
-                                        partBoxes = new BlockVariantsBus(entity.Api, entity.Block, aparam.material, 7).CollisionBoxes;
-                                    }
-                                    else
-                                    {
-                                        partBoxes = new BlockVariantsBus(entity.Api, entity.Block, aparam.material, 6).CollisionBoxes;
-                                    }
-                                }
-                                else
-                                {
-                                    partBoxes = new BlockVariantsBus(entity.Api, entity.Block, aparam.material, 5).CollisionBoxes;
-                                }
-                            }
-                            else
-                            {
-                                partBoxes = new BlockVariantsBus(entity.Api, entity.Block, aparam.material, 4).CollisionBoxes;
-                            }
-                        }
-                        else
-                        {
-                            partBoxes = new BlockVariantsBus(entity.Api, entity.Block, aparam.material, 3).CollisionBoxes;
-                        }
+                    var aparam = entity.AllAparams![face.Index];
+                    var info = GetVariantAndRotation(entity.Api, entity.Block, aparam.material, count, connection);
+                    if (info == null)
+                        continue;
 
-                        rotated = partBoxes.Select(b => b.RotatedCopy(xyz.Item1, xyz.Item2, xyz.Item3, origin)).ToArray();
-                    }
-                    else if (count == 3)
-                    {
-                        if (!RotationMapNes1.TryGetValue(connection, out xyz))
-                        {
-                            if (!RotationMapNes2.TryGetValue(connection, out xyz))
-                            {
-                                if (!RotationMapNes3.TryGetValue(connection, out xyz))
-                                {
-                                    if (!RotationMapNes4.TryGetValue(connection, out xyz))
-                                    {
-                                            continue;
-                                    }
-                                    else
-                                    {
-                                        partBoxes = new BlockVariantsBus(entity.Api, entity.Block, aparam.material, 11).CollisionBoxes;
-                                    }
-                                }
-                                else
-                                {
-                                    partBoxes = new BlockVariantsBus(entity.Api, entity.Block, aparam.material, 10).CollisionBoxes;
-                                }
-                            }
-                            else
-                            {
-                                partBoxes = new BlockVariantsBus(entity.Api, entity.Block, aparam.material, 9).CollisionBoxes;
-                            }
-                        }
-                        else
-                        {
-                            partBoxes = new BlockVariantsBus(entity.Api, entity.Block, aparam.material, 8).CollisionBoxes;
-                        }
-                        rotated = partBoxes.Select(b => b.RotatedCopy(xyz.Item1, xyz.Item2, xyz.Item3, origin)).ToArray();
-                    }
-                    else if (count == 4)
-                    {
-                        partBoxes = new BlockVariantsBus(entity.Api, entity.Block, aparam.material, 12).CollisionBoxes;
-                        if (!RotationMapNesw.TryGetValue(connection, out xyz))
-                            continue;
-                        rotated = partBoxes.Select(b => b.RotatedCopy(xyz.Item1, xyz.Item2, xyz.Item3, origin)).ToArray();
-                    }
-                    
+                    var (variant, rot) = info.Value;
+                    var rotatedBoxes = variant!.CollisionBoxes
+                        .Select(b => b.RotatedCopy(rot.x, rot.y, rot.z, origin))
+                        .ToArray();
 
-
-                    AddBoxes(ref boxes, FacingHelper.FromFace(face), rotated);
+                    AddBoxes(ref boxes, FacingHelper.FromFace(face), rotatedBoxes);
                 }
             }
 
-            // если это не кабель, возвращаем стандартные коллайдеры
             if (!entity.Block.Code.ToString().Contains("abus"))
             {
                 boxes = new Dictionary<Facing, Cuboidf[]> { { Facing.NorthAll, entity.Block.CollisionBoxes } };
@@ -1009,6 +744,7 @@ namespace Automaton.Content.Block.ABus
 
             return boxes!;
         }
+
 
 
         private static void AddBoxes(ref Dictionary<Facing, Cuboidf[]> cache, Facing key, Cuboidf[] boxes)
