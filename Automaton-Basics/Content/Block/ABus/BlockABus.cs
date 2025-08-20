@@ -24,7 +24,7 @@ namespace Automaton.Content.Block.ABus
 
         public readonly static Dictionary<CacheDataKey, MeshData> MeshDataCache = new();
 
-        private static readonly ConcurrentDictionary<(string material, int variant), BlockVariantsBus> VariantCache
+        private static readonly ConcurrentDictionary<int, BlockVariantsBus> VariantCache
             = new();
 
         /// <summary>
@@ -230,10 +230,8 @@ namespace Automaton.Content.Block.ABus
                     return false;
 
                 // обновляем текущий блок с кабелем 
-                var material = MyMiniLib.GetAttributeString(byItemStack.Block, "material", "");  // определяем материал
-                material = "12345678";
-
-                var newAparams = new AParams(material);
+                var bits= (BusConfigurator)MyMiniLib.GetAttributeInt(byItemStack.Block, "bits",0);  // определяем материал
+                var newAparams = new AParams(bits);
 
                 placedCable.Connection = facing;       //сообщаем направление
                 placedCable.Aparams = (newAparams, faceIndex);
@@ -254,14 +252,14 @@ namespace Automaton.Content.Block.ABus
 
 
                 //подгружаем некоторые параметры из ассета
-                var material = MyMiniLib.GetAttributeString(byItemStack.Block, "material", "");  //определяем материал
-                material = "12345678";
+                var bits = (BusConfigurator)MyMiniLib.GetAttributeInt(byItemStack.Block, "bits", 0);  // определяем материал
 
-                var emptyMaterial = entity.AllAparams![faceIndex].material; //а было ли что-то
+
+                var emptyMaterial = entity.AllAparams![faceIndex].configurator; //а было ли что-то
                 //линий 0? Значит грань была пустая
-                if (emptyMaterial == null || emptyMaterial == "")
+                if (emptyMaterial == BusConfigurator.None)
                 {
-                    var newAparams = new AParams(material);
+                    var newAparams = new AParams(bits);
                     entity.Aparams = (newAparams, faceIndex);
 
                     entity.AllAparams[faceIndex] = newAparams;
@@ -269,10 +267,10 @@ namespace Automaton.Content.Block.ABus
                 else   //линий не 0, значит уже что-то там есть на грани
                 {
                     //какой блок сейчас здесь находится
-                    var indexM2 = entity.AllAparams[faceIndex].material;          //индекс материала этой грани
+                    //var indexM2 = entity.AllAparams[faceIndex].configurator;          //индекс материала этой грани
 
 
-                    var block = new GetAsset().BusAsset(api, entity.Block, indexM2, 1); // берем ассет блока кабеля
+                    var block = new GetAsset().BusAsset(api, entity.Block, 1); // берем ассет блока кабеля
 
                     //проверяем сколько у игрока проводов в руке и совпадают ли они с теми что есть
                     if (!CanAddCableToFace(block.Code, currentGameMode, byItemStack, 1))
@@ -281,7 +279,7 @@ namespace Automaton.Content.Block.ABus
                     //if (currentGameMode == EnumGameMode.Creative) // чтобы в креативе не уменьшало стак
                     //    byItemStack.StackSize += 1;
 
-                    var newEparams = new AParams(material);
+                    var newEparams = new AParams(bits);
                     entity.Aparams = (newEparams, faceIndex);
 
                     entity.AllAparams[faceIndex] = newEparams;
@@ -395,8 +393,8 @@ namespace Automaton.Content.Block.ABus
             foreach (var face in FacingHelper.Faces(selectedFacing))
             {
 
-                var material = entity.AllAparams[face.Index].material; //индекс материала этой грани
-                material = "12345678";
+                //var material = entity.AllAparams[face.Index].configurator; //индекс материала этой грани
+    
 
                 // берем направления только в этой грани
                 connection = selectedFacing & FacingHelper.FromFace(face);
@@ -411,7 +409,7 @@ namespace Automaton.Content.Block.ABus
                 ItemStack itemStack = null!;
 
                 // берем ассет блока кабеля
-                var block = new GetAsset().BusAsset(api, entity.Block, material, 1);
+                var block = new GetAsset().BusAsset(api, entity.Block, 1);
                 itemStack = new(block, stackSize);
 
 
@@ -440,8 +438,8 @@ namespace Automaton.Content.Block.ABus
             foreach (var face in FacingHelper.Faces(entity.Connection))         //перебираем все грани выделенных кабелей
             {
 
-                var material = entity.AllAparams[face.Index].material;          //индекс материала этой грани
-                material = "12345678";
+                //var material = entity.AllAparams[face.Index].material;          //индекс материала этой грани
+                //material = "12345678";
 
                 connection = entity.Connection & FacingHelper.FromFace(face);                   //берем направления только в этой грани
 
@@ -453,7 +451,7 @@ namespace Automaton.Content.Block.ABus
                 var itemStack = default(ItemStack?);
 
                 //берем ассет блока кабеля
-                var block = new GetAsset().BusAsset(api, entity.Block, material, 1);
+                var block = new GetAsset().BusAsset(api, entity.Block, 1);
                 itemStack = new(block, stackSize);
 
 
@@ -509,8 +507,8 @@ namespace Automaton.Content.Block.ABus
             foreach (var face in FacingHelper.Faces(selectedConnection))         //перебираем все грани выделенных кабелей
             {
 
-                var material = entity.AllAparams![face.Index].material;          //индекс материала этой грани
-                material = "12345678";
+                //var material = entity.AllAparams![face.Index].material;          //индекс материала этой грани
+                //material = "12345678";
 
                 var connection = selectedConnection & FacingHelper.FromFace(face);                   //берем направления только в этой грани
 
@@ -521,7 +519,7 @@ namespace Automaton.Content.Block.ABus
 
                 var itemStack = default(ItemStack?);
 
-                var block = new GetAsset().BusAsset(api, entity.Block, material, 1); //берем ассет блока кабеля
+                var block = new GetAsset().BusAsset(api, entity.Block, 1); //берем ассет блока кабеля
                 itemStack = new(block, connectionStackSize);
 
 
@@ -633,13 +631,13 @@ namespace Automaton.Content.Block.ABus
         /// <param name="connection"></param>
         /// <returns></returns>
         private static (BlockVariantsBus? variant, (float x, float y, float z) rot)? GetVariantAndRotation(
-            ICoreAPI api, Vintagestory.API.Common.Block block, string material, int count, Facing connection)
+            ICoreAPI api, Vintagestory.API.Common.Block block, int count, Facing connection)
         {
             if (!RotationLookup.TryGetValue((count, connection), out var result))
                 return null;
 
-            var bus = VariantCache.GetOrAdd((material, result.variant),
-                key => new BlockVariantsBus(api, block, key.material, key.variant));
+            var bus = VariantCache.GetOrAdd((result.variant),
+                key => new BlockVariantsBus(api, block, key));
 
             return (bus, result.rot);
         }
@@ -678,7 +676,7 @@ namespace Automaton.Content.Block.ABus
                             continue;
 
                         var aparam = entity.AllAparams![face.Index];
-                        var info = GetVariantAndRotation(api, entity.Block, aparam.material, count, connection);
+                        var info = GetVariantAndRotation(api, entity.Block, count, connection);
                         if (info == null)
                             continue;
 
@@ -724,7 +722,7 @@ namespace Automaton.Content.Block.ABus
                         continue;
 
                     var aparam = entity.AllAparams![face.Index];
-                    var info = GetVariantAndRotation(entity.Api, entity.Block, aparam.material, count, connection);
+                    var info = GetVariantAndRotation(entity.Api, entity.Block, count, connection);
                     if (info == null)
                         continue;
 

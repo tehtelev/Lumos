@@ -407,7 +407,7 @@ public class BEBehaviorAutomaton : BlockEntityBehavior
 
         if (this.Api.World.BlockAccessor.GetBlockEntity(this.Blockentity.Pos) is BlockEntityACable) //если кабель!
         {
-            stringBuilder.AppendLine("├ " + Lang.Get("Resistivity") + ": " + networkInformation.AParamsInNetwork.material + " " + Lang.Get("Om/line"));
+            stringBuilder.AppendLine("├ " + Lang.Get("Resistivity") + ": " + networkInformation.AParamsInNetwork.configurator + " " + Lang.Get("Om/line"));
         }
 
         

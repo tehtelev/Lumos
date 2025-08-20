@@ -22,7 +22,7 @@ public class BlockEntityETransformator : BlockEntityABase
 
         this.Automaton.Connection = Facing.DownAll;
         this.Automaton.Aparams = (
-            new(""),
+            new(BusConfigurator.None),
             FacingHelper.Faces(Facing.DownAll).First().Index);
     }
 }

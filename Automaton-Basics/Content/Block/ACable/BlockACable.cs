@@ -77,6 +77,20 @@ namespace Automaton.Content.Block.ACable
             { 1, "part" }
         };
 
+        public static Dictionary<int, string> bits2Types = new()
+        {
+            { 1, "1" },
+            { 2, "2" },
+            { 3, "3" },
+            { 7, "4" },
+            { 15, "5" },
+            { 31, "6" },
+            { 63, "7" },
+            { 127, "8" }
+        };
+
+
+
         public override void OnLoaded(ICoreAPI api)
         {
             base.OnLoaded(api);
@@ -126,10 +140,10 @@ namespace Automaton.Content.Block.ACable
                     return false;
 
                 // обновляем текущий блок с кабелем 
-                var material = MyMiniLib.GetAttributeString(byItemStack.Block, "material", "");  // определяем материал
+                var bits = (BusConfigurator)MyMiniLib.GetAttributeInt(byItemStack.Block, "bits", 0);  // определяем материал
 
 
-                var newAparams = new AParams(material);
+                var newAparams = new AParams(bits);
 
                 placedCable.Connection = facing;       //сообщаем направление
                 placedCable.Aparams = (newAparams, faceIndex);
@@ -150,14 +164,14 @@ namespace Automaton.Content.Block.ACable
 
 
                 //подгружаем некоторые параметры из ассета
-                var material = MyMiniLib.GetAttributeString(byItemStack.Block, "material", "");  //определяем материал
+                var bits = (BusConfigurator)MyMiniLib.GetAttributeInt(byItemStack.Block, "bits", 0);  // определяем материал
 
 
-                var emptyMaterial = entity.AllAparams![faceIndex].material; //а было ли что-то
+                var emptyMaterial = entity.AllAparams![faceIndex].configurator; //а было ли что-то
                 //линий 0? Значит грань была пустая
-                if (emptyMaterial == null || emptyMaterial == "")
+                if (emptyMaterial == BusConfigurator.None)
                 {
-                    var newAparams = new AParams(material);
+                    var newAparams = new AParams(bits);
                     entity.Aparams = (newAparams, faceIndex);
 
                     entity.AllAparams[faceIndex] = newAparams;
@@ -165,7 +179,7 @@ namespace Automaton.Content.Block.ACable
                 else   //линий не 0, значит уже что-то там есть на грани
                 {
                     //какой блок сейчас здесь находится
-                    var indexM2 = entity.AllAparams[faceIndex].material;          //индекс материала этой грани
+                    var indexM2 = entity.AllAparams[faceIndex].configurator;          //индекс материала этой грани
 
 
                     var block = new GetAsset().CableAsset(api, entity.Block, indexM2, 1); // берем ассет блока кабеля
@@ -177,7 +191,7 @@ namespace Automaton.Content.Block.ACable
                     //if (currentGameMode == EnumGameMode.Creative) // чтобы в креативе не уменьшало стак
                     //    byItemStack.StackSize += 1;
 
-                    var newEparams = new AParams(material);
+                    var newEparams = new AParams(bits);
                     entity.Aparams = (newEparams, faceIndex);
 
                     entity.AllAparams[faceIndex] = newEparams;
@@ -291,7 +305,7 @@ namespace Automaton.Content.Block.ACable
             foreach (var face in FacingHelper.Faces(selectedFacing))
             {
 
-                var material = entity.AllAparams[face.Index].material; //индекс материала этой грани
+                var material = entity.AllAparams[face.Index].configurator; //индекс материала этой грани
 
 
                 // берем направления только в этой грани
@@ -336,7 +350,7 @@ namespace Automaton.Content.Block.ACable
             foreach (var face in FacingHelper.Faces(entity.Connection))         //перебираем все грани выделенных кабелей
             {
 
-                var material = entity.AllAparams[face.Index].material;          //индекс материала этой грани
+                var material = entity.AllAparams[face.Index].configurator;          //индекс материала этой грани
 
 
                 connection = entity.Connection & FacingHelper.FromFace(face);                   //берем направления только в этой грани
@@ -405,7 +419,7 @@ namespace Automaton.Content.Block.ACable
             foreach (var face in FacingHelper.Faces(selectedConnection))         //перебираем все грани выделенных кабелей
             {
 
-                var material = entity.AllAparams![face.Index].material;          //индекс материала этой грани
+                var material = entity.AllAparams![face.Index].configurator;          //индекс материала этой грани
 
 
                 var connection = selectedConnection & FacingHelper.FromFace(face);                   //берем направления только в этой грани
@@ -541,7 +555,7 @@ namespace Automaton.Content.Block.ACable
                     {
                         int bufIndex = FacingHelper.Faces(main).First().Index;
                         var eparam = entity.AllAparams![bufIndex];
-                        var partVariant = new BlockVariantsCable(api, entity.Block, eparam.material, 1);
+                        var partVariant = new BlockVariantsCable(api, entity.Block, eparam.configurator, 1);
 
                         var (x, y, z) = RotationMap[(main, sub)];
                         var rotated = partVariant.MeshData?.Clone().Rotate(origin, x * GameMath.DEG2RAD, y * GameMath.DEG2RAD, z * GameMath.DEG2RAD);
@@ -580,7 +594,7 @@ namespace Automaton.Content.Block.ACable
                 {
                     int bufIndex = FacingHelper.Faces(main).First().Index;
                     var eparam = entity.AllAparams![bufIndex];
-                    var partBoxes = new BlockVariantsCable(entity.Api, entity.Block, eparam.material, 1).CollisionBoxes;
+                    var partBoxes = new BlockVariantsCable(entity.Api, entity.Block, eparam.configurator, 1).CollisionBoxes;
 
                     var (x, y, z) = RotationMap[(main, sub)];
                     var rotated = partBoxes.Select(b => b.RotatedCopy(x, y, z, origin)).ToArray();

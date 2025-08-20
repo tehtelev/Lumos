@@ -15,11 +15,11 @@ public class BlockEntityAConnector : BlockEntityACable
             return;
 
         electricity.Connection = Facing.AllAll;
-        electricity.Aparams = (new("12345678"), 0);
-        electricity.Aparams = (new("12345678"), 1);
-        electricity.Aparams = (new("12345678"), 2);
-        electricity.Aparams = (new("12345678"), 3);
-        electricity.Aparams = (new("12345678"), 4);
-        electricity.Aparams = (new("12345678"), 5);
+        electricity.Aparams = (new(BusConfigurator.All), 0);
+        electricity.Aparams = (new(BusConfigurator.All), 1);
+        electricity.Aparams = (new(BusConfigurator.All), 2);
+        electricity.Aparams = (new(BusConfigurator.All), 3);
+        electricity.Aparams = (new(BusConfigurator.All), 4);
+        electricity.Aparams = (new(BusConfigurator.All), 5);
     }
 }

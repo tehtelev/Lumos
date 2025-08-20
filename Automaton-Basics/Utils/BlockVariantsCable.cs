@@ -19,7 +19,7 @@ public class BlockVariantsCable
     /// <param name="baseBlock"></param>
     /// <param name="material"></param>
     /// <param name="indexType"></param>
-    public BlockVariantsCable(ICoreAPI api, CollectibleObject baseBlock, string material, int indexType)
+    public BlockVariantsCable(ICoreAPI api, CollectibleObject baseBlock, BusConfigurator bits, int indexType)
     {
 
         string[] t = new string[2];
@@ -28,7 +28,7 @@ public class BlockVariantsCable
         t[0] = "bit";
         t[1] = "type";
 
-        v[0] = material;
+        v[0] = BlockACable.bits2Types[(int)bits];
         v[1] = BlockACable.types[indexType];
 
         var assetLocation = baseBlock.CodeWithVariants(t, v);

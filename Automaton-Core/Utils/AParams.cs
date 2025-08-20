@@ -7,18 +7,18 @@ namespace Automaton.Utils
     /// </summary>
     public struct AParams : IEquatable<AParams>
     {
-        public string material;     //индекс материала
-        public bool[] signal;            //ток проходящий тут
+        public BusConfigurator configurator;     // конфигуратор шины, определяет какие биты могут быть задействованы
+        public bool[] signal;                    // ток проходящий тут
 
         /// <summary>
         /// Конструктор для создания параметров проводника/приборов
         /// </summary>
         public AParams(
-            string material,
+            BusConfigurator configurator,
             bool[] signal = null!
             )
         {
-            this.material = material;
+            this.configurator = configurator;
             if (signal == null)
             {
                 this.signal = new bool[8] { false, false, false, false, false, false, false, false };
@@ -35,7 +35,7 @@ namespace Automaton.Utils
         /// </summary>
         public AParams()
         {
-            material = "";
+            configurator = BusConfigurator.None;
             signal = new bool[8] { false, false, false, false, false, false, false, false };
         }
 
@@ -48,7 +48,7 @@ namespace Automaton.Utils
         /// <returns></returns>
         public bool Equals(AParams other)
         {
-            return material == other.material;
+            return configurator == other.configurator;
 
         }
 
@@ -72,7 +72,7 @@ namespace Automaton.Utils
             unchecked
             {
                 var hash = 17;
-                hash = hash * 31 + material.GetHashCode();
+                hash = hash * 31 + configurator.GetHashCode();
                 return hash;
             }
         }

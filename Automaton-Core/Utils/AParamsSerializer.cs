@@ -14,7 +14,7 @@ namespace Automaton.Utils
                 writer.Write(eparamsArray.Length);
                 foreach (var eparam in eparamsArray)
                 {
-                    writer.Write(eparam.material);        // строка с префиксом длины
+                    writer.Write((int)eparam.configurator);        // строка с префиксом длины
 
                     // --- сериализация signal ---
                     /*
@@ -37,7 +37,7 @@ namespace Automaton.Utils
                 AParams[] eparamsArray = new AParams[length];
                 for (int i = 0; i < length; i++)
                 {
-                    string material = reader.ReadString();
+                    BusConfigurator configurator = (BusConfigurator)reader.ReadInt32();
 
                     /*
                     // --- десериализация signal ---
@@ -49,7 +49,7 @@ namespace Automaton.Utils
 
                     eparamsArray[i] = new AParams
                     {
-                        material = material,
+                        configurator = configurator,
                         //signal = signal
                     };
                 }

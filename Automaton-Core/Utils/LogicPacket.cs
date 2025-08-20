@@ -10,9 +10,9 @@ namespace Automaton.Utils
 
 
         /// <summary>
-        /// Материал
+        /// В какой линии пакет находится
         /// </summary>
-        public string material;
+        public BusConfigurator configuratorPacket;
 
 
         /// <summary>
@@ -52,7 +52,7 @@ namespace Automaton.Utils
         /// Создаёт пакет, просто сохраняя ссылки на массивы из кэша.
         /// </summary>
         public LogicPacket(
-            string Material,
+            BusConfigurator ConfiguratorPacket,
             int CurrentIndex,
             BlockPos[] Path,
             int[] FacingFrom,
@@ -60,7 +60,7 @@ namespace Automaton.Utils
             Facing[] UsedConnections
         )
         {
-            material = Material;
+            configuratorPacket = ConfiguratorPacket;
             currentIndex = CurrentIndex;
             path = Path;
             facingFrom = FacingFrom;

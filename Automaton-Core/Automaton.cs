@@ -583,7 +583,7 @@ namespace Automaton
 
                                 // создаём пакет, не копируя ничего
                                 packet = new LogicPacket(
-                                    parts[posStore].aparams[facing.Last()].material,
+                                    parts[posStore].aparams[facing.Last()].configurator,
                                     path.Length - 1,
                                     path,
                                     facing,
@@ -688,7 +688,7 @@ namespace Automaton
 
                                 // создаём пакет, не копируя ничего
                                 packet = new LogicPacket(
-                                    parts[posStore].aparams[facing.Last()].material,
+                                    parts[posStore].aparams[facing.Last()].configurator,
                                     path.Length - 1,
                                     path,
                                     facing,
@@ -936,9 +936,8 @@ namespace Automaton
                         // Ручная проверка условий 
                         foreach (var s in part2.aparams)
                         {
-                            if (s.material != null  // проверяем что линия подходит
-                                && s.material != ""
-                                && s.material.Contains(packet.material))
+                            if (s.configurator != BusConfigurator.None  // проверяем что линия живая
+                                && (s.configurator & packet.configuratorPacket)!=0) // проверяем что линия в пакете совпадает с линией в части сети
                             {
                                 isValid = true;
                                 break;
@@ -1408,7 +1407,7 @@ namespace Automaton
                     i++;
                 }
 
-                if (!setEparams.Item1.Equals(new AParams()) && (part.aparams[face.Index].material == null || part.aparams[face.Index].material == ""))
+                if (!setEparams.Item1.Equals(new AParams()) && part.aparams[face.Index].configurator == BusConfigurator.None)
                     part.aparams[face.Index] = setEparams.Item1;      //аналогично с параметрами электричества
             }
 

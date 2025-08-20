@@ -17,9 +17,8 @@ public class BlockVariantsBus
     /// </summary>
     /// <param name="api"></param>
     /// <param name="baseBlock"></param>
-    /// <param name="material"></param>
     /// <param name="indexType"></param>
-    public BlockVariantsBus(ICoreAPI api, CollectibleObject baseBlock, string material, int indexType)
+    public BlockVariantsBus(ICoreAPI api, CollectibleObject baseBlock, int indexType)
     {
 
         string[] t = new string[1];

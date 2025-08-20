@@ -120,7 +120,7 @@ public class BlockETermoGenerator : BlockEBase
             var isolatedEnvironment = MyMiniLib.GetAttributeBool(this, "isolatedEnvironment", false);
 
             entity.Aparams = (
-                new(""),
+                new(BusConfigurator.None),
                 FacingHelper.Faces(facing).First().Index);
 
 
