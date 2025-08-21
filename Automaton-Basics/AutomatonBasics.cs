@@ -2,6 +2,8 @@
 using Automaton.Content.Block.ABus;
 using Automaton.Content.Block.ACable;
 using Automaton.Content.Block.AConnector;
+using Automaton.Content.Block.AConsumer;
+using Automaton.Content.Block.ALantern;
 using Automaton.Content.Block.EGenerator;
 using Automaton.Content.Block.EMotor;
 using Automaton.Content.Block.ETermoGenerator;
@@ -73,6 +75,16 @@ public class AutomatonBasics : ModSystem
         api.RegisterBlockClass("BlockConnector", typeof(BlockConnector));
         api.RegisterBlockEntityClass("BlockEntityAConnector", typeof(BlockEntityAConnector));
         api.RegisterBlockEntityBehaviorClass("BEBehaviorAConnector", typeof(BEBehaviorAConnector));
+
+        api.RegisterBlockClass("BlockLantern", typeof(BlockLantern));
+        api.RegisterBlockEntityClass("BlockEntityALantern", typeof(BlockEntityALantern));
+        api.RegisterBlockEntityBehaviorClass("BEBehaviorALantern", typeof(BEBehaviorALantern));
+
+
+        api.RegisterBlockEntityClass("BlockEntityAConsumer", typeof(BlockEntityAConsumer));
+        api.RegisterBlockEntityBehaviorClass("BEBehaviorAConsumer", typeof(BEBehaviorAConsumer));
+
+
 
 
         api.RegisterBlockClass("BlockETransformator", typeof(BlockETransformator));

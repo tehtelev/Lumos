@@ -73,7 +73,7 @@
   "textures": {
     "black": { "base": "block/bright/black" },
     "blue": { "base": "block/bright/blue" },
-    "brown": { "base": "block/bright/brown" },
+    "brown": { "base": "block/bright/white" },
     "green": { "base": "block/bright/green" },
     "orange": { "base": "block/bright/orange" },
     "red": { "base": "block/bright/red" },
