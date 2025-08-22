@@ -1,0 +1,27 @@
+﻿[
+  {
+    "file": "game:blocktypes/paperlantern",
+    "path": "/entityBehaviors",
+    "op": "add",
+    "value": [
+      {
+        "name": "BEBehaviorALantern"
+      },
+      {
+        "name": "Automaton"
+      }
+    ]
+  },
+  {
+    "file": "game:blocktypes/paperlantern",
+    "path": "/entityClass",
+    "op": "add",
+    "value": "BlockEntityALantern"
+  },
+  {
+    "file": "game:blocktypes/paperlantern",
+    "path": "/class",
+    "op": "add",
+    "value": "BlockLantern"
+  }
+]

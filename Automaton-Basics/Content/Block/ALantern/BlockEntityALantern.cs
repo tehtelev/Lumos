@@ -14,12 +14,12 @@ public class BlockEntityALantern : BlockEntityABase
         if (behaviorAutomaton == null || byItemStack == null)
             return;
 
-        behaviorAutomaton.Connection = Facing.AllAll;
-        behaviorAutomaton.Aparams = (new(BusConfigurator.All), 0);
-        behaviorAutomaton.Aparams = (new(BusConfigurator.All), 1);
-        behaviorAutomaton.Aparams = (new(BusConfigurator.All), 2);
-        behaviorAutomaton.Aparams = (new(BusConfigurator.All), 3);
-        behaviorAutomaton.Aparams = (new(BusConfigurator.All), 4);
+        behaviorAutomaton.Connection = Facing.DownAll;
+        //behaviorAutomaton.Aparams = (new(BusConfigurator.All), 0);
+        //behaviorAutomaton.Aparams = (new(BusConfigurator.All), 1);
+        //behaviorAutomaton.Aparams = (new(BusConfigurator.All), 2);
+        //behaviorAutomaton.Aparams = (new(BusConfigurator.All), 3);
+        //behaviorAutomaton.Aparams = (new(BusConfigurator.All), 4);
         behaviorAutomaton.Aparams = (new(BusConfigurator.All), 5);
     }
 

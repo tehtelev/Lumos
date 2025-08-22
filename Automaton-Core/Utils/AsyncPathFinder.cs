@@ -133,7 +133,18 @@ namespace Automaton.Utils
                                 copiedProcessed,
                                 copiedUsedConn);
                         }
-
+                        else
+                        {
+                            // Добавление скопированных данных в кэш
+                            PathCacheManager.AddOrUpdate(
+                                request.Start.Copy(),
+                                request.End.Copy(),
+                                request.Network.version,
+                                null,
+                                null,
+                                null,
+                                null);
+                        }
 
 
                     }

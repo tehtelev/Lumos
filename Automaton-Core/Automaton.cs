@@ -943,19 +943,19 @@ namespace Automaton
                                 break;
                             }
                         }
-                        /*
+                        
                         if (isValid)
                         {
                             if (sumEnergy.TryGetValue(pos, out _))
                             {
-                                sumEnergy[pos] += packet.energy;
+                                sumEnergy[pos] += 1;
                             }
                             else
                             {
-                                sumEnergy.Add(pos, packet.energy);
+                                sumEnergy.Add(pos, 1);
                             }
                         }
-                        */
+                        
                     }
 
                     globalEnergyPackets[i].shouldBeRemoved = true;
@@ -964,47 +964,61 @@ namespace Automaton
                 {
                     currentPos = packet.path[curIndex];              // текущая позиция в пути пакета
                     nextPos = packet.path[curIndex - 1];             // следующая позиция в пути пакета
-                    currentFacingFrom = packet.facingFrom[curIndex]; // текущая грань, с которой пришел пакет
+                    //currentFacingFrom = packet.facingFrom[curIndex]; // текущая грань, с которой пришел пакет
+                    var nextFacingFrom = packet.facingFrom[curIndex-1];
 
                     if (parts.TryGetValue(nextPos, out nextPart!) &&
                         parts.TryGetValue(currentPos, out currentPart!))
                     {
                         if ((nextPart.Connection & packet.usedConnections[curIndex - 1]) == packet.usedConnections[curIndex - 1]) // проверяем совпадает ли путь в пакете с путем в части сети
                         {
-    
-                            /*
-                            // пересчитаем ток уже с учетом потерь
-                            current = packet.energy / packet.voltage;
-
-
-                            packet.currentIndex--;
-
-                            // далее учитываем правило алгебраического сложения встречных токов
-                            // 1) Определяем вектор движения
-                            var delta = nextPos.SubCopy(currentPos);
-                            var sign = true;
-
-                            if (delta.X < 0) sign = !sign;
-                            if (delta.Y < 0) sign = !sign;
-                            if (delta.Z < 0) sign = !sign;
-
-                            // 2) Прописываем токи на нужные грани
-                            var j = 0;
-                            foreach (var face in packet.nowProcessedFaces[packet.currentIndex])
+                            if (nextPart.aparams[nextFacingFrom].configurator != BusConfigurator.None // проверяем что линия живая
+                                && (nextPart.aparams[nextFacingFrom].configurator & packet.configuratorPacket) != 0) // проверяем что линия в пакете совпадает с линией в части сети
+                                
                             {
-                                if (face)
+                                packet.configuratorPacket = nextPart.aparams[nextFacingFrom].configurator &
+                                                            packet.configuratorPacket;
+
+                                packet.currentIndex--;
+                                /*
+                                // пересчитаем ток уже с учетом потерь
+                                current = packet.energy / packet.voltage;
+
+
+
+
+                                // далее учитываем правило алгебраического сложения встречных токов
+                                // 1) Определяем вектор движения
+                                var delta = nextPos.SubCopy(currentPos);
+                                var sign = true;
+
+                                if (delta.X < 0) sign = !sign;
+                                if (delta.Y < 0) sign = !sign;
+                                if (delta.Z < 0) sign = !sign;
+
+                                // 2) Прописываем токи на нужные грани
+                                var j = 0;
+                                foreach (var face in packet.nowProcessedFaces[packet.currentIndex])
                                 {
-                                    if (sign)
-                                        nextPart.aparams[j].current += current; // добавляем ток в следующую часть сети
-                                    else
-                                        nextPart.aparams[j].current -= current; // добавляем ток в следующую часть сети
+                                    if (face)
+                                    {
+                                        if (sign)
+                                            nextPart.aparams[j].current += current; // добавляем ток в следующую часть сети
+                                        else
+                                            nextPart.aparams[j].current -= current; // добавляем ток в следующую часть сети
+                                    }
+
+                                    j++;
                                 }
 
-                                j++;
+                                */
                             }
-
-                            */
-
+                            else
+                            {
+                                // если все же линия не совпадает с линией в пакете, то чистим пакет
+                                //PathCacheManager.RemoveAll(packet.path[0], packet.path.Last());
+                                globalEnergyPackets[i].shouldBeRemoved = true;
+                            }
 
                         }
                         else
@@ -1606,7 +1620,7 @@ namespace Automaton
             {
                 if (method == "thisFace" || method == "firstFace") // пока так, возможно потом по-разному будет обработка
                 {
-                    var blockFacing = FacingHelper.Faces(facing).First();
+                    var blockFacing = FacingHelper.Faces(facing)?.First();
 
                     if (part.Networks[blockFacing.Index] is { } net)
                     {

@@ -21,43 +21,48 @@ public class BlockLantern: BlockEBase
     }
 
 
+    public override void OnBlockInteractStop(float secondsUsed, IWorldAccessor world, IPlayer byPlayer,
+        BlockSelection blockSel)
+    {
+        base.OnBlockInteractStop(secondsUsed, world, byPlayer, blockSel);
+
+        if (world.Side == EnumAppSide.Server) // только на сервере
+        {
+            if (
+                world.BlockAccessor.GetBlockEntity(blockSel.Position) is BlockEntityALantern entity
+            )
+            {
+                var variant = entity?.Block?.Variant["state"];
+                if (variant == null)
+                    return;
+
+                var beh = entity.GetBehavior<BEBehaviorALantern>();
+                if (variant == "on")
+                {
+                    var assetLocation = this.CodeWithVariant("state", "off");
+                    world.BlockAccessor.ExchangeBlock(world.BlockAccessor.GetBlock(assetLocation).Id, blockSel.Position);
+                    if (beh != null)
+                        beh.Working = false;
+                    entity.MarkDirty(true);
+                }
+                else
+                {
+                    var assetLocation = this.CodeWithVariant("state", "on");
+                    world.BlockAccessor.ExchangeBlock(world.BlockAccessor.GetBlock(assetLocation).Id, blockSel.Position);
+                    if (beh != null)
+                        beh.Working = true;
+                    entity.MarkDirty(true);
+                }
 
 
-
-
+            }
+        }
+    }
 
 
     public override bool OnBlockInteractStart(IWorldAccessor world, IPlayer byPlayer, BlockSelection blockSel)
     {
-        if (
-            world.BlockAccessor.GetBlockEntity(blockSel.Position) is BlockEntityALantern entity
-        )
-        {
-            var variant= blockSel?.Block?.Variant["state"];
-            if (variant == null)
-                return false;
-
-            var beh = entity.GetBehavior<BEBehaviorALantern>();
-            if (variant == "on")
-            {
-                var assetLocation = this.CodeWithVariant("state","off");
-                world.BlockAccessor.SetBlock(world.BlockAccessor.GetBlock(assetLocation).Id, blockSel.Position);
-                if (beh != null)
-                    beh.Working = false;
-                entity.MarkDirty(true);
-            }
-            else
-            {
-                var assetLocation = this.CodeWithVariant("state", "on");
-                world.BlockAccessor.SetBlock(world.BlockAccessor.GetBlock(assetLocation).Id, blockSel.Position);
-                if (beh != null)
-                    beh.Working = true;
-                entity.MarkDirty(true);
-            }
-
-            return true;
-        }
-        return base.OnBlockInteractStart(world, byPlayer, blockSel);
+        return true;
     }
 
 

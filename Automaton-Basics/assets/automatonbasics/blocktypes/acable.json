@@ -32,22 +32,22 @@
       "bits": 2
     },
     "*-3-*": {
-      "bits": 3
+      "bits": 4
     },
     "*-4-*": {
-      "bits": 7
+      "bits": 8
     },
     "*-5-*": {
-      "bits": 15
+      "bits": 16
     },
     "*-6-*": {
-      "bits": 31
+      "bits": 32
     },
     "*-7-*": {
-      "bits": 63
+      "bits": 64
     },
     "*-8-*": {
-      "bits": 127
+      "bits": 128
     }
   },
 
@@ -114,7 +114,7 @@
       "material": { "base": "block/bright/blue" }
     },
     "*-5-*": {
-      "material": { "base": "block/bright/brown" }
+      "material": { "base": "block/bright/white" }
     },
     "*-6-*": {
       "material": { "base": "block/bright/black" }

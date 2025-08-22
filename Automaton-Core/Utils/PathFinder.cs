@@ -281,8 +281,19 @@ public class PathFinder
 
         nowProcessingFaces[pathLength - 1] = facing;
 
+        // проверка на корректность конфигурации шин
         
+        BusConfigurator validator=BusConfigurator.All;
+        int k=0;
+        foreach (var pos in path)
+        {
+            validator=parts[pos].aparams[facingFromList[k]].configurator & validator;
+            k++;
+        }
 
+        if (validator == BusConfigurator.None) //конфигурация шин не позволяет передавать сигнал
+            return (null!, null!, null!, null!);
+        
         return (path, facingFromList, nowProcessedFacesList, nowProcessingFaces);
     }
 

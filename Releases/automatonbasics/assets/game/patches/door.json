@@ -1,0 +1,15 @@
+﻿[
+  {
+    "file": "game:blocktypes/wood/woodtyped/door",
+    "path": "/entityBehaviors",
+    "op": "addmerge",
+    "value": [
+      {
+        "name": "BEBehaviorAConsumer"
+      },
+      {
+        "name": "Automaton"
+      }
+    ]
+  }
+]
