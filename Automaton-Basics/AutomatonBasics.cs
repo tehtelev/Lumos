@@ -81,7 +81,7 @@ public class AutomatonBasics : ModSystem
         api.RegisterBlockEntityBehaviorClass("BEBehaviorALantern", typeof(BEBehaviorALantern));
 
 
-        api.RegisterBlockEntityClass("BlockEntityAConsumer", typeof(BlockEntityAConsumer));
+        //api.RegisterBlockEntityClass("BlockEntityAConsumer", typeof(BlockEntityAConsumer));
         api.RegisterBlockEntityBehaviorClass("BEBehaviorAConsumer", typeof(BEBehaviorAConsumer));
 
 

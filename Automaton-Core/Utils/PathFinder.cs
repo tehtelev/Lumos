@@ -185,8 +185,12 @@ public class PathFinder
                 int priority = Heuristic(neighbor, end); // Приоритет = эвристика
                 if (!processedFaces[neighbor][buf2[i]]   // проверяем, что грань соседа еще не обработана
                     && !cameFrom.ContainsKey(state)      // проверяем, что состояние еще не посещали
-                    && priority < 200)                     // ограничение на приоритет, чтобы не зацикливаться на бесконечном поиске
+                    && priority < 200                     // ограничение на приоритет, чтобы не зацикливаться на бесконечном поиске
+                    )
                 {
+                    if (parts[neighbor].Conductor == null && neighbor != end) // если в соседе нет проводника и это не конец, то путь не может идти через этот блок
+                        continue;
+
 
                     queue.Enqueue(state, priority);
 
