@@ -25,12 +25,9 @@ namespace Automaton.Utils
                 // --- сериализация AParamsInNetwork ---
                 var eparam = info.AParamsInNetwork;
                 writer.Write((int)eparam.configurator);
+                writer.Write((int)eparam.signal);   
+                
 
-                writer.Write(eparam.signal.Length);   // длина массива
-                foreach (bool b in eparam.signal)
-                    writer.Write(b);
-
-                writer.Write(info.current);
 
                 return ms.ToArray();
             }
@@ -57,16 +54,9 @@ namespace Automaton.Utils
                 // --- десериализация AParamsInNetwork ---
                 var eparam = new AParams();
                 eparam.configurator = (BusConfigurator) reader.ReadInt32();
+                eparam.signal = (BusConfigurator)reader.ReadInt32();
 
-                int signalLen = reader.ReadInt32();
-                bool[] signal = new bool[signalLen];
-                for (int j = 0; j < signalLen; j++)
-                    signal[j] = reader.ReadBoolean();
-                eparam.signal = signal;
-
-                info.AParamsInNetwork = eparam;
-
-                info.current = reader.ReadSingle();
+                info.AParamsInNetwork=eparam;
 
                 return info;
             }

@@ -7,26 +7,21 @@ namespace Automaton.Utils
     /// </summary>
     public struct AParams : IEquatable<AParams>
     {
-        public BusConfigurator configurator;     // конфигуратор шины, определяет какие биты могут быть задействованы
-        public bool[] signal;                    // ток проходящий тут
+        public BusConfigurator configurator;     // конфигуратор шины, определяет какие биты могут быть задействованы в линии
+        public BusConfigurator signal;           // какие сигналы активны на данной линии (битовое поле)
 
         /// <summary>
         /// Конструктор для создания параметров проводника/приборов
         /// </summary>
         public AParams(
             BusConfigurator configurator,
-            bool[] signal = null!
+            BusConfigurator signal = BusConfigurator.None
             )
         {
             this.configurator = configurator;
-            if (signal == null)
-            {
-                this.signal = new bool[8] { false, false, false, false, false, false, false, false };
-            }
-            else
-            {
-                this.signal = signal;
-            }
+
+            this.signal = signal;
+            
         }
 
 
@@ -36,7 +31,7 @@ namespace Automaton.Utils
         public AParams()
         {
             configurator = BusConfigurator.None;
-            signal = new bool[8] { false, false, false, false, false, false, false, false };
+            signal = BusConfigurator.None;
         }
 
         

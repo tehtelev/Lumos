@@ -893,11 +893,11 @@ namespace Automaton
         private void ConsumeAndMovePackets()
         {
             BlockPos pos;                   // Временная переменная для позиции
-            float resistance, current, lossEnergy;  // Переменные для расчета сопротивления, тока и потерь энергии                    
+            float resistance, lossEnergy;  // Переменные для расчета сопротивления, тока и потерь энергии                    
             int curIndex, currentFacingFrom;        // текущий индекс и направление в пакете
             BlockPos currentPos, nextPos;           // текущая и следующая позиции в пути пакета
             NetworkPart nextPart, currentPart;      // Временные переменные для частей сети
-
+            BusConfigurator current;
 
             foreach (var part2 in parts)  //перебираем все элементы
             {
@@ -911,12 +911,12 @@ namespace Automaton
                     sumEnergy[part2.Key] = 0F;
                 }
 
-                Array.Fill(part2.Value.aparams[0].signal, false);       //обнуляем токи
-                Array.Fill(part2.Value.aparams[1].signal, false);       //обнуляем токи
-                Array.Fill(part2.Value.aparams[2].signal, false);       //обнуляем токи
-                Array.Fill(part2.Value.aparams[3].signal, false);       //обнуляем токи
-                Array.Fill(part2.Value.aparams[4].signal, false);       //обнуляем токи
-                Array.Fill(part2.Value.aparams[5].signal, false);       //обнуляем токи
+                part2.Value.aparams[0].signal = BusConfigurator.None;     //обнуляем токи
+                part2.Value.aparams[1].signal = BusConfigurator.None;     //обнуляем токи
+                part2.Value.aparams[2].signal = BusConfigurator.None;     //обнуляем токи
+                part2.Value.aparams[3].signal = BusConfigurator.None;     //обнуляем токи
+                part2.Value.aparams[4].signal = BusConfigurator.None;     //обнуляем токи
+                part2.Value.aparams[5].signal = BusConfigurator.None;     //обнуляем токи
             }
 
 
@@ -980,21 +980,8 @@ namespace Automaton
                                                             packet.configuratorPacket;
 
                                 packet.currentIndex--;
-                                /*
-                                // пересчитаем ток уже с учетом потерь
-                                current = packet.energy / packet.voltage;
-
-
-
-
-                                // далее учитываем правило алгебраического сложения встречных токов
-                                // 1) Определяем вектор движения
-                                var delta = nextPos.SubCopy(currentPos);
-                                var sign = true;
-
-                                if (delta.X < 0) sign = !sign;
-                                if (delta.Y < 0) sign = !sign;
-                                if (delta.Z < 0) sign = !sign;
+                                
+                                
 
                                 // 2) Прописываем токи на нужные грани
                                 var j = 0;
@@ -1002,16 +989,13 @@ namespace Automaton
                                 {
                                     if (face)
                                     {
-                                        if (sign)
-                                            nextPart.aparams[j].current += current; // добавляем ток в следующую часть сети
-                                        else
-                                            nextPart.aparams[j].current -= current; // добавляем ток в следующую часть сети
+                                        nextPart.aparams[j].signal |= packet.configuratorPacket; // добавляем ток в следующую часть сети
                                     }
 
                                     j++;
                                 }
 
-                                */
+                                
                             }
                             else
                             {
@@ -1627,7 +1611,7 @@ namespace Automaton
                         localNetwork = net;                                              //выдаем найденную цепь
                         result.Facing |= FacingHelper.FromFace(blockFacing);        //выдаем ее направления
                         result.AParamsInNetwork = part.aparams[blockFacing.Index];  //выдаем ее текущие параметры
-                        //result.current = part.aparams[blockFacing.Index].current;           //выдаем текущий ток в этой грани
+                        //result.signal = part.aparams[blockFacing.Index].signal;           //выдаем текущий ток в этой грани
                     }
                     else
                         return result;
@@ -1640,8 +1624,7 @@ namespace Automaton
                     foreach (var blockFacing2 in FacingHelper.Faces(facing))
                     {
                         if (part.Networks[blockFacing2.Index] is not null
-                            //&& Math.Abs(part.aparams[blockFacing2.Index].current) > 0.0F
-                            )
+                            && part.aparams[blockFacing2.Index].signal > 0)
                         {
                             blockFacing = blockFacing2;
                             searchIndex = blockFacing2.Index;
@@ -1653,7 +1636,7 @@ namespace Automaton
                         localNetwork = net;                                              //выдаем найденную цепь
                         result.Facing |= FacingHelper.FromFace(blockFacing);        //выдаем ее направления
                         result.AParamsInNetwork = part.aparams[searchIndex];  //выдаем ее текущие параметры
-                        //result.current = part.aparams[searchIndex].current;           //выдаем текущий ток в этой грани
+                        //result.signal = part.aparams[searchIndex].signal;           //выдаем текущий ток в этой грани
                     }
                     else
                         return result;

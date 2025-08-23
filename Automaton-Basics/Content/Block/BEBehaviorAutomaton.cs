@@ -1,4 +1,5 @@
-﻿using Automaton.Content.Block.ACable;
+﻿using Automaton.Content.Block.ABus;
+using Automaton.Content.Block.ACable;
 using Automaton.Content.Block.AConnector;
 using Automaton.Interface;
 using Automaton.Utils;
@@ -289,7 +290,7 @@ public class BEBehaviorAutomaton : BlockEntityBehavior
         string methodForInformation = ""; //метод получения информации о сети, в зависимости от типа блока-энитити
 
         //если это кабель, то мы можем вывести только информацию о сети на одной грани
-        if (entity is BlockEntityACable blockEntityACable
+        if ((entity is BlockEntityACable blockEntityACable)
             && entity is not BlockEntityAConnector
             && blockEntityACable.AllAparams != null)
         {
@@ -311,7 +312,29 @@ public class BEBehaviorAutomaton : BlockEntityBehavior
 
             }
         }
-        else if (entity is BlockEntityAConnector blockEntityEConnector && blockEntityEConnector.AllAparams != null) //если это мет блок
+        else if ((entity is BlockEntityABus blockEntityABus)
+                 && entity is not BlockEntityAConnector
+                 && blockEntityABus.AllAparams != null)
+        {
+            if (forPlayer is { CurrentBlockSelection: { } blockSelection })
+            {
+                var key = BlockABus.CacheDataKey.FromEntity(blockEntityABus);
+                var hitPosition = blockSelection.HitPosition;
+
+                var sf = new SelectionFacingCable();
+                selectedFacing = sf.SelectionFacing(key, hitPosition, this.Api.World.BlockAccessor.GetBlockEntity(this.Blockentity.Pos));  //выделяем напрвление для слома под курсором
+
+                if (selectedFacing != Facing.None)
+                    selectedFacing = FacingHelper.FromFace(FacingHelper.Faces(selectedFacing).First());  //выбираем одну грань, если даже их там вдруг окажется больше
+                else
+                    return;
+
+                methodForInformation = "thisFace"; // только указанную грань
+
+
+            }
+        }
+        else if (entity is BlockEntityAConnector blockEntityAConnector && blockEntityAConnector.AllAparams != null) //если это мет блок
         {
             selectedFacing = Facing.AllAll;
             methodForInformation = "currentFace"; // берем информацию о любой грани, где ток больше 0
@@ -403,7 +426,8 @@ public class BEBehaviorAutomaton : BlockEntityBehavior
 
         stringBuilder.AppendLine(Lang.Get("Block"));
         //stringBuilder.AppendLine("├ " + Lang.Get("Max. current") + ": " + networkInformation.AParamsInNetwork.maxCurrent * networkInformation.eParamsInNetwork.lines + " " + Lang.Get("A"));
-        stringBuilder.AppendLine("├ " + Lang.Get("Current") + ": " + Math.Abs(networkInformation.current).ToString("F3") + " " + Lang.Get("A"));
+
+        stringBuilder.AppendLine("├ " + Lang.Get("Current") + ": " + Convert.ToString((int)networkInformation.AParamsInNetwork.signal, 2).PadLeft(8, '0'));
 
         if (this.Api.World.BlockAccessor.GetBlockEntity(this.Blockentity.Pos) is BlockEntityACable) //если кабель!
         {

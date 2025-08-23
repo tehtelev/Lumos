@@ -17,7 +17,7 @@
         public int NumberOfProducers;
         public int NumberOfTransformators;
         public AParams AParamsInNetwork = new();
-        public float current;
+        
 
         /// <summary>
         /// Сбросить все значения до стандартных
@@ -36,7 +36,7 @@
             NumberOfProducers = 0;
             NumberOfTransformators = 0;
             AParamsInNetwork = new();
-            current = 0f;
+            
         }
     }
 
