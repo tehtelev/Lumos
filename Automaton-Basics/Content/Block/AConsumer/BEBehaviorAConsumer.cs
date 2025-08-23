@@ -41,8 +41,7 @@ namespace Automaton.Content.Block.AConsumer
         {
             base.GetBlockInfo(forPlayer, dsc);
 
-            if (this.Api.World.BlockAccessor.GetBlockEntity(this.Blockentity.Pos) is not BlockEntityAConsumer entity)
-                return;
+
 
 
         }
@@ -132,12 +131,12 @@ namespace Automaton.Content.Block.AConsumer
             if (behaviorAutomaton == null)
                 return;
 
-            behaviorAutomaton.Connection = Facing.DownAll;
-            //behaviorAutomaton.Aparams = (new(BusConfigurator.All), 0);
-            //behaviorAutomaton.Aparams = (new(BusConfigurator.All), 1);
-            //behaviorAutomaton.Aparams = (new(BusConfigurator.All), 2);
-            //behaviorAutomaton.Aparams = (new(BusConfigurator.All), 3);
-            //behaviorAutomaton.Aparams = (new(BusConfigurator.All), 4);
+            behaviorAutomaton.Connection = Facing.AllAll;
+            behaviorAutomaton.Aparams = (new(BusConfigurator.All), 0);
+            behaviorAutomaton.Aparams = (new(BusConfigurator.All), 1);
+            behaviorAutomaton.Aparams = (new(BusConfigurator.All), 2);
+            behaviorAutomaton.Aparams = (new(BusConfigurator.All), 3);
+            behaviorAutomaton.Aparams = (new(BusConfigurator.All), 4);
             behaviorAutomaton.Aparams = (new(BusConfigurator.All), 5);
 
             base.Initialize(api, properties);

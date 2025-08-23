@@ -118,27 +118,29 @@ public class PathFinder
             endBlockFacing.Add(face.Index);
         }
 
-        //очередь обработки
+        // заполняем очередь обработки стартовыми значениями
+        foreach (var sFace in startBlockFacing)
+        {
+            queue.Enqueue((start, sFace), 0);
 
-        queue.Enqueue((start, startBlockFacing[0]), 0);
+            //хранит цепочку пути и грань
+            cameFrom[(start, sFace)] = (null!, 0);
 
-        //хранит цепочку пути и грань
+            //хранит номер задействованной грани соседа 
+            facingFrom[(start, sFace)] = sFace;
 
-        cameFrom[(start, startBlockFacing[0])] = (null!, 0);
+            //хранит для каждого кусочка цепи посещенные грани в данный момент
+            nowProcessedFaces[(start, sFace)] = new bool[6] { false, false, false, false, false, false };
+            nowProcessedFaces[(start, sFace)][sFace] = true;
+        }
+        
+
+
 
         //хранит цепочку пути (для вывода наружу)
         cameFromList.Add(start);
 
-        //хранит номер задействованной грани соседа 
-
-        facingFrom[(start, startBlockFacing[0])] = startBlockFacing[0];
-
-
-        //хранит для каждого кусочка цепи посещенные грани в данный момент
-
-        nowProcessedFaces[(start, startBlockFacing[0])] = new bool[6] { false, false, false, false, false, false };
-        nowProcessedFaces[(start, startBlockFacing[0])][startBlockFacing[0]] = true;
-
+        
 
 
 
@@ -221,7 +223,7 @@ public class PathFinder
         if (!cameFromList.Contains(end))        //не нашли конец?
             return (null!, null!, null!, null!);
 
-        var (path, faces) = ReconstructPath(start, end, endBlockFacing[0], cameFrom);    //реконструкция маршрута
+        var (path, faces) = ReconstructPath(start, end, endBlockFacing, cameFrom);    //реконструкция маршрута
 
 
         // Если путь не найден, возвращаем null
@@ -500,19 +502,41 @@ public class PathFinder
     private (BlockPos[]? path, int[]? faces) ReconstructPath(
         BlockPos start,
         BlockPos end,
-        int endFacing,
+        List<int> endFacing,
         Dictionary<(BlockPos, int), (BlockPos, int)> cameFrom)
     {
         // 1) Первый проход: считаем длину пути
         int length = 0;
-        var current = (pos: end, facing: endFacing);
+        var current = (pos: end, facing: endFacing[0]);
+        int endFace = -1;
 
         while (current.pos != null)
         {
             length++;
             // пытаемся перейти к предку; если не можем — значит путь неполный
-            if (!cameFrom.TryGetValue(current, out current))
-                return (null, null);
+            if (current.pos == end)
+            {
+                bool valid = false;
+                foreach (var eFace in endFacing)
+                {
+                    current.pos = end;
+                    current.facing = eFace;
+                    if (cameFrom.TryGetValue(current, out current))
+                    {
+                        valid = true;
+                        endFace = current.facing;
+                        break;
+                    }
+                }
+
+                if (!valid)
+                    return (null, null);
+            }
+            else
+            {
+                if (!cameFrom.TryGetValue(current, out current))
+                    return (null, null);
+            }
         }
 
         // 2) Аллокация массивов ровно под нужный размер
@@ -520,15 +544,30 @@ public class PathFinder
         Array.Resize(ref faceArray, length);
 
 
-        //var pathArray = new BlockPos[length];
-        //var faceArray = new int[length];
-
         // 3) Второй проход: заполняем массивы с конца в начало
-        current = (end, endFacing);
+        current = (end, endFacing[0]);
         for (int i = length - 1; i >= 0; i--)
         {
             pathArray[i] = current.pos;
             faceArray[i] = current.facing;
+
+            if (current.pos == end)
+            {
+                foreach (var eFace in endFacing)
+                {
+                    current.facing = eFace;
+                    faceArray[i] = current.facing;
+                    current.pos = end;
+                    if (cameFrom.TryGetValue(current, out current))
+                    {
+                        i--;
+                        pathArray[i] = current.pos;
+                        faceArray[i] = current.facing;
+                        break;
+                    }
+                }
+            }
+
             // при последней итерации (i == 0) попытка провалится, но нам уже не нужен следующий элемент
             cameFrom.TryGetValue(current, out current);
         }

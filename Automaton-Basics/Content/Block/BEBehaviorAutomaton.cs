@@ -429,10 +429,11 @@ public class BEBehaviorAutomaton : BlockEntityBehavior
 
         stringBuilder.AppendLine("├ " + Lang.Get("Current") + ": " + Convert.ToString((int)networkInformation.AParamsInNetwork.signal, 2).PadLeft(8, '0'));
 
-        if (this.Api.World.BlockAccessor.GetBlockEntity(this.Blockentity.Pos) is BlockEntityACable) //если кабель!
-        {
-            stringBuilder.AppendLine("├ " + Lang.Get("Resistivity") + ": " + networkInformation.AParamsInNetwork.configurator + " " + Lang.Get("Om/line"));
-        }
+
+        //if (this.Api.World.BlockAccessor.GetBlockEntity(this.Blockentity.Pos) is BlockEntityACable) //если кабель!
+        //{
+        //    stringBuilder.AppendLine("├ " + Lang.Get("Resistivity") + ": " + networkInformation.AParamsInNetwork.configurator + " " + Lang.Get("Om/line"));
+        //}
 
         
     }
