@@ -21,7 +21,7 @@ namespace Automaton.Utils
         }
 
         // TTL, по истечении которого неиспользуемые записи удаляются
-        private static readonly TimeSpan EntryTtl = TimeSpan.FromMinutes(Automaton.cacheTimeoutCleanupMinutes);
+        private static readonly TimeSpan EntryTtl = TimeSpan.FromMinutes(Automaton.CacheTimeoutCleanupMinutes);
 
         // Сам кэш, ключом служит только (start, end, version)
         private static readonly ConcurrentDictionary<(BlockPos, BlockPos), Entry> cache = new();

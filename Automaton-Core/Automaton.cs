@@ -69,7 +69,7 @@ namespace Automaton
         public ICoreAPI api = null!;
         private ICoreClientAPI capi = null!;
         private ICoreServerAPI sapi = null!;
-        private ElectricityConfig? config;
+        private AutomatonConfig? config;
         //public static DamageManager? damageManager;
         public static WeatherSystemServer? WeatherSystemServer;
 
@@ -77,10 +77,10 @@ namespace Automaton
         private Network localNetwork = new Network();
 
 
-        public static int speedOfElectricity; // Скорость электричества в проводах (блоков в тик)
-        public static int timeBeforeBurnout; // Время до сгорания проводника в секундах
-        public static int multiThreading; // сколько потоков использовать
-        public static int cacheTimeoutCleanupMinutes; // Время очистки кэша путей в минутах
+        public static int SpeedOfAutomatic; // Скорость электричества в проводах (блоков в тик)
+        //public static int timeBeforeBurnout; // Время до сгорания проводника в секундах
+        public static int MultiThreading; // сколько потоков использовать
+        public static int CacheTimeoutCleanupMinutes; // Время очистки кэша путей в минутах
 
 
         public int tickTimeMs;
@@ -161,17 +161,17 @@ namespace Automaton
         {
             // грузим конфиг
             // если конфиг с ошибкой или не найден, то генерируется стандартный
-            config = api.LoadModConfig<ElectricityConfig>("ElectricityConfig.json") ?? new ElectricityConfig();
-            api.StoreModConfig(config, "ElectricityConfig.json");
+            config = api.LoadModConfig<AutomatonConfig>("AutomatonConfig.json") ?? new AutomatonConfig();
+            api.StoreModConfig(config, "AutomatonConfig.json");
 
             // проверяем, что конфиг валиден, и обрезаются значения
-            speedOfElectricity = Math.Clamp(config.speedOfElectricity, 1, 16);
-            timeBeforeBurnout = Math.Clamp(config.timeBeforeBurnout, 1, 600);
-            multiThreading = Math.Clamp(config.multiThreading, 2, 32);
-            cacheTimeoutCleanupMinutes = Math.Clamp(config.cacheTimeoutCleanupMinutes, 1, 60);
+            SpeedOfAutomatic = Math.Clamp(config.SpeedOfAutomatic, 1, 16);
+            //timeBeforeBurnout = Math.Clamp(config.TimeBeforeBurnout, 1, 600);
+            MultiThreading = Math.Clamp(config.MultiThreading, 2, 32);
+            CacheTimeoutCleanupMinutes = Math.Clamp(config.CacheTimeoutCleanupMinutes, 1, 60);
 
             // устанавливаем время между тиками
-            tickTimeMs = 1000 / speedOfElectricity;
+            tickTimeMs = 1000 / SpeedOfAutomatic;
         }
 
 
@@ -220,7 +220,7 @@ namespace Automaton
 
             listenerId1 = sapi.Event.RegisterGameTickListener(OnGameTickServer, tickTimeMs);
 
-            asyncPathFinder = new AsyncPathFinder(parts, multiThreading); // вычислитель параллельных задач поиска путей
+            asyncPathFinder = new AsyncPathFinder(parts, MultiThreading); // вычислитель параллельных задач поиска путей
         }
 
 
@@ -1611,7 +1611,7 @@ namespace Automaton
                         localNetwork = net;                                              //выдаем найденную цепь
                         result.Facing |= FacingHelper.FromFace(blockFacing);        //выдаем ее направления
                         result.AParamsInNetwork = part.aparams[blockFacing.Index];  //выдаем ее текущие параметры
-                        //result.signal = part.aparams[blockFacing.Index].signal;           //выдаем текущий ток в этой грани
+                        
                     }
                     else
                         return result;
@@ -1636,7 +1636,7 @@ namespace Automaton
                         localNetwork = net;                                              //выдаем найденную цепь
                         result.Facing |= FacingHelper.FromFace(blockFacing);        //выдаем ее направления
                         result.AParamsInNetwork = part.aparams[searchIndex];  //выдаем ее текущие параметры
-                        //result.signal = part.aparams[searchIndex].signal;           //выдаем текущий ток в этой грани
+                        
                     }
                     else
                         return result;
@@ -1721,12 +1721,11 @@ namespace Automaton
     /// <summary>
     /// Конфигуратор сети
     /// </summary>
-    public class ElectricityConfig
+    public class AutomatonConfig
     {
-        public int speedOfElectricity = 4;
-        public int timeBeforeBurnout = 30;
-        public int multiThreading = 4;
-        public int cacheTimeoutCleanupMinutes = 2;
+        public int SpeedOfAutomatic = 16;
+        public int MultiThreading = 4;
+        public int CacheTimeoutCleanupMinutes = 2;
     }
 
     /// <summary>
