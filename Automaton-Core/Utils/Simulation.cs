@@ -45,7 +45,7 @@ namespace Automaton.Utils
                     if (customer.Remaining <= 0.001f)
                         continue;
 
-                    float remaining = customer.Remaining;
+                    int remaining = customer.Remaining;
                     int[] availableStoreIds = customer.GetAvailableStoreIds();
                     ProcessStoresArray(customer, remaining, availableStoreIds);
                 }
@@ -85,7 +85,7 @@ namespace Automaton.Utils
         /// <param name="customer"></param>
         /// <param name="remaining"></param>
         /// <param name="storeIds"></param>
-        private void ProcessStoresArray(Customer customer, float remaining, int[] storeIds)
+        private void ProcessStoresArray(Customer customer, int remaining, int[] storeIds)
         {
             while (customer.HasMoreStores() && remaining > 0.001f)
             {
@@ -94,7 +94,7 @@ namespace Automaton.Utils
                 if (store.Stock <= 0.001f && store.ImNull)
                     continue;
 
-                float requested = remaining;
+                int requested = remaining;
                 store.CurrentRequests[customer.Id] = requested;
                 remaining -= requested;
             }

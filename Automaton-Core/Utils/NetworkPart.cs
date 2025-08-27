@@ -12,7 +12,7 @@ namespace Automaton.Utils
         public AParams[] aparams = new AParams[] { };
         public readonly BlockPos Position;
         public Facing Connection = Facing.None;
-        public IAutomaticAccumulator? Accumulator;
+        public IAutomaticProcessor? Processor;
         public IAutomaticConsumer? Consumer;
         public IAutomaticConductor? Conductor;
         public IAutomaticProducer? Producer;

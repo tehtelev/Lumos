@@ -94,8 +94,11 @@ public class PathFinder
 
         networkPositions = network.PartPositions; // ни в коем случае не очищать
 
-        //проверяем наличие начальной и конечной точки в этой цепи
-        if (!networkPositions.Contains(start) || !networkPositions.Contains(end))
+        if (!networkPositions.Contains(start)    //проверяем наличие начальной точки в этой цепи
+            || !networkPositions.Contains(end)   //проверяем наличие конечной точки в этой цепи
+            || Heuristic(start, end) >= Automaton.maxDistanceForFinding   // ограничение на поиск пути, чтобы не зацикливаться на бесконечном поиске
+            || start == end                        // начальная и конечная точка не должны совпадать
+           )
             return (null!, null!, null!, null!);
 
 
@@ -107,8 +110,7 @@ public class PathFinder
         }
 
 
-        // startBlockFacing[0] и endBlockFacing[0] будут работать корректно до тех пор, пока не появятся источники и приемники энергии, у которых несколько граней на передачу и прием!!!!
-
+     
 
 
         //смотрим с какой грани заканчивать
@@ -187,13 +189,12 @@ public class PathFinder
                 int priority = Heuristic(neighbor, end); // Приоритет = эвристика
                 if (!processedFaces[neighbor][buf2[i]]   // проверяем, что грань соседа еще не обработана
                     && !cameFrom.ContainsKey(state)      // проверяем, что состояние еще не посещали
-                    && priority < 200                     // ограничение на приоритет, чтобы не зацикливаться на бесконечном поиске
+                    && priority < Automaton.maxDistanceForFinding   // ограничение на приоритет, чтобы не зацикливаться на бесконечном поиске
                     )
                 {
                     if (parts[neighbor].Conductor == null && neighbor != end) // если в соседе нет проводника и это не конец, то путь не может идти через этот блок
                         continue;
-
-
+                    
                     queue.Enqueue(state, priority);
 
                     cameFrom[state] = (currentPos, facingFrom[(currentPos, currentFace)]);
@@ -212,11 +213,6 @@ public class PathFinder
             }
 
 
-
-            //if (cameFrom.Count > 1000)
-            //{ // Ограничение на количество посещенных состояний
-            //    return (null!, null!, null!, null!);
-            //}
 
         }
 

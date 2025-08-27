@@ -36,28 +36,29 @@ namespace Automaton
 
 
         private readonly List<LogicPacket> globalEnergyPackets = new(); // Глобальный список пакетов энергии
-
+        
         private AsyncPathFinder asyncPathFinder = null!;
 
         //public PathFinder pathFinder = new PathFinder(); // Модуль поиска путей
 
-        private Dictionary<BlockPos, float> sumEnergy = new();
+        private Dictionary<BlockPos, List<BusConfigurator>> sumEnergy = new();
 
 
-        private List<Consumer> localConsumers = new List<Consumer>();
+       
+        private List<Processor> localProcessors = new List<Processor>();
         private List<Producer> localProducers = new List<Producer>();
-        private List<Accumulator> localAccums = new List<Accumulator>();
+        
         private List<LogicPacket> localPackets = new List<LogicPacket>(); // Для пакетов сети
 
         private List<BlockPos> consumerPositions = new();
-        private List<float> consumerRequests = new();
+        private List<int> consumerRequests = new();
         private List<BlockPos> producerPositions = new();
-        private List<float> producerGive = new();
+        private List<int> producerGive = new();
 
         private List<BlockPos> consumer2Positions = new();
-        private List<float> consumer2Requests = new();
+        private List<int> consumer2Requests = new();
         private List<BlockPos> producer2Positions = new();
-        private List<float> producer2Give = new();
+        private List<int> producer2Give = new();
 
         private Simulation sim = new();
         private Simulation sim2 = new();
@@ -78,10 +79,9 @@ namespace Automaton
 
 
         public static int SpeedOfAutomatic; // Скорость электричества в проводах (блоков в тик)
-        //public static int timeBeforeBurnout; // Время до сгорания проводника в секундах
         public static int MultiThreading; // сколько потоков использовать
         public static int CacheTimeoutCleanupMinutes; // Время очистки кэша путей в минутах
-
+        public static int maxDistanceForFinding; // Максимальное расстояние для поиска пути
 
         public int tickTimeMs;
         private float elapsedMs = 0f;
@@ -166,9 +166,9 @@ namespace Automaton
 
             // проверяем, что конфиг валиден, и обрезаются значения
             SpeedOfAutomatic = Math.Clamp(config.SpeedOfAutomatic, 1, 16);
-            //timeBeforeBurnout = Math.Clamp(config.TimeBeforeBurnout, 1, 600);
             MultiThreading = Math.Clamp(config.MultiThreading, 2, 32);
             CacheTimeoutCleanupMinutes = Math.Clamp(config.CacheTimeoutCleanupMinutes, 1, 60);
+            maxDistanceForFinding = Math.Clamp(config.MaxDistanceForFinding, 8, 1000);
 
             // устанавливаем время между тиками
             tickTimeMs = 1000 / SpeedOfAutomatic;
@@ -324,9 +324,9 @@ namespace Automaton
         /// <param name="sim"></param>
         private void logisticalTask(Network network,
             List<BlockPos> consumerPositions,
-            List<float> consumerRequests,
+            List<int> consumerRequests,
             List<BlockPos> producerPositions,
-            List<float> producerGive,
+            List<int> producerGive,
             Simulation sim)
         {
             var cP = consumerPositions.Count; // Количество потребителей
@@ -421,9 +421,9 @@ namespace Automaton
                         continue;
                     }
 
-                    if (part.Accumulator is not null && part.IsLoaded) // Проверяем, что загружен и существует
+                    if (part.Processor is not null && part.IsLoaded) // Проверяем, что загружен и существует
                     {
-                        part.Accumulator.Update();
+                        part.Processor.Update();
                         continue;
                     }
 
@@ -478,9 +478,10 @@ namespace Automaton
             foreach (var network in networks)
             {
                 // Этап 1: Очищаем локальные переменные цикла ----------------------------------------------------------------------------
-                localConsumers.Clear();
+                
                 localProducers.Clear();
-                localAccums.Clear();
+                localProcessors.Clear();
+                
                 localPackets.Clear();
 
                 consumerPositions.Clear();
@@ -497,37 +498,54 @@ namespace Automaton
 
 
 
-                // Этап 2: Сбор запросов от потребителей----------------------------------------------------------------------------
+                // Этап 2: Сбор запросов от потребителей и обработчиков----------------------------------------------------------------------------
                 var cons = network.Consumers.Count; // Количество потребителей в сети
-                float requestedEnergy; // Запрошенная энергия от потребителей
+                int requestedEnergy; // Запрошенная энергия от потребителей
                 consumerPositions = new(cons); // Позиции потребителей
                 consumerRequests = new(cons); // Запросы потребителей
 
-                foreach (var electricConsumer in network.Consumers)
+                // потребители 
+                foreach (var logicConsumer in network.Consumers)
                 {
-                    if (network.PartPositions.Contains(electricConsumer.Pos) // Проверяем, что потребитель находится в части сети
-                        && parts[electricConsumer.Pos].IsLoaded              // Проверяем, что потребитель загружен
-                        && electricConsumer.Consume_request() > 0)             // Проверяем, что потребитель запрашивает энергию вообще
+                    if (network.PartPositions.Contains(logicConsumer.Pos) // Проверяем, что потребитель находится в части сети
+                        && parts[logicConsumer.Pos].IsLoaded              // Проверяем, что потребитель загружен
+                        && logicConsumer.Consume_request() > 0)           // Проверяем, что потребитель запрашивает энергию вообще
                     {
-                        localConsumers.Add(new Consumer(electricConsumer));
-                        requestedEnergy = electricConsumer.Consume_request();
-                        consumerPositions.Add(electricConsumer.Pos);
+                        
+                        requestedEnergy = logicConsumer.Consume_request();
+                        consumerPositions.Add(logicConsumer.Pos);
                         consumerRequests.Add(requestedEnergy);
                     }
                 }
 
-                // Этап 3: Сбор энергии с генераторов и аккумуляторов----------------------------------------------------------------------------
-                var prod = network.Producers.Count + network.Accumulators.Count; // Количество производителей в сети
-                float giveEnergy; // Энергия, которую отдают производители
+                // обработчики
+                foreach (var logicProcessor in network.Processors)
+                {
+                    if (network.PartPositions.Contains(logicProcessor.Pos) // Проверяем, что обработчик находится в части сети
+                        && parts[logicProcessor.Pos].IsLoaded              // Проверяем, что обработчик загружен
+                        && logicProcessor.Consume_request() > 0)           // Проверяем, что обработчик запрашивает энергию вообще
+                    {
+                        
+                        requestedEnergy = logicProcessor.Consume_request();
+                        consumerPositions.Add(logicProcessor.Pos);
+                        consumerRequests.Add(requestedEnergy);
+                    }
+                }
+
+
+                // Этап 3: Сбор энергии с источников ----------------------------------------------------------------------------
+                var prod = network.Producers.Count + network.Processors.Count; // Количество производителей в сети
+                int giveEnergy; // Энергия, которую отдают производители
                 producerPositions = new(prod); // Позиции производителей
                 producerGive = new(prod); // Энергия, которую отдают производители
 
+                // источники
                 foreach (var electricProducer in network.Producers)
                 {
                     if (network.PartPositions.Contains(electricProducer.Pos) // Проверяем, что генератор находится в части сети
                         && parts[electricProducer.Pos].IsLoaded              // Проверяем, что генератор загружен
-                        && electricProducer.Produce_give() > 0)                // Проверяем, что генератор отдает энергию вообще
-                    {
+                        && electricProducer.Produce_give() > 0)              // Проверяем, что генератор отдает энергию вообще
+                    { 
                         localProducers.Add(new Producer(electricProducer));
                         giveEnergy = electricProducer.Produce_give();
                         producerPositions.Add(electricProducer.Pos);
@@ -536,19 +554,20 @@ namespace Automaton
                     }
                 }
 
-                foreach (var electricAccum in network.Accumulators)
+                // обработчики
+                foreach (var logicProcessor in network.Processors)
                 {
-                    if (network.PartPositions.Contains(electricAccum.Pos)   // Проверяем, что аккумулятор находится в части сети
-                        && parts[electricAccum.Pos].IsLoaded                // Проверяем, что аккумулятор загружен
-                        && electricAccum.canRelease() > 0)                    // Проверяем, что аккумулятор может отдать энергию вообще
+                    if (network.PartPositions.Contains(logicProcessor.Pos) // Проверяем, что обработчик находится в части сети
+                        && parts[logicProcessor.Pos].IsLoaded              // Проверяем, что обработчик загружен
+                        && logicProcessor.Produce_give() > 0)           // Проверяем, что обработчик запрашивает энергию вообще
                     {
-                        localAccums.Add(new Accumulator(electricAccum));
-                        giveEnergy = electricAccum.canRelease();
-                        producerPositions.Add(electricAccum.Pos);
+                        localProcessors.Add(new Processor(logicProcessor));
+                        giveEnergy = logicProcessor.Produce_give();
+                        producerPositions.Add(logicProcessor.Pos);
                         producerGive.Add(giveEnergy);
-
                     }
                 }
+
 
                 // Этап 4: Распределение энергии ----------------------------------------------------------------------------
                 logisticalTask(network, consumerPositions, consumerRequests, producerPositions, producerGive, sim);
@@ -609,40 +628,42 @@ namespace Automaton
 
 
                 // Этап 5: Забираем у аккумуляторов выданное----------------------------------------------------------------------------
+                /*
                 var consIter = 0; // Итератор
                 foreach (var accum in localAccums)
                 {
-                    if (sim.Stores![consIter + localProducers.Count].Stock < accum.AutomaticAccum.canRelease())
+                    if (sim.Stores![consIter + localProducers.Count].Stock < accum.AutomaticProces.canRelease())
                     {
-                        accum.AutomaticAccum.Release(accum.AutomaticAccum.canRelease() -
+                        accum.AutomaticProces.Release(accum.AutomaticProces.canRelease() -
                                                     sim.Stores[consIter + localProducers.Count].Stock);
                     }
 
                     consIter++;
                 }
-
+                */
 
                 // Этап 6: Зарядка аккумуляторов    ----------------------------------------------------------------------------
-                cons = network.Accumulators.Count; // Количество аккумов в сети
+                /*
+                cons = network.Processors.Count; // Количество аккумов в сети
                 consumer2Positions = new(cons); // Позиции потребителей
                 consumer2Requests = new(cons); // Запросы потребителей
                 localAccums.Clear();
-                foreach (var electricAccum in network.Accumulators)
+                foreach (var electricAccum in network.Processors)
                 {
                     if (network.PartPositions.Contains(electricAccum.Pos)   // Проверяем, что аккумулятор находится в части сети
                         && parts[electricAccum.Pos].IsLoaded)                // Проверяем, что аккумулятор загружен
                                                                              // Проверяем, что аккумулятор может отдать энергию вообще
                     {
-                        localAccums.Add(new Accumulator(electricAccum));
-                        requestedEnergy = electricAccum.canStore();
+                        localAccums.Add(new Processor(electricAccum));
+                        requestedEnergy = (int)electricAccum.canStore();
                         consumer2Positions.Add(electricAccum.Pos);
                         consumer2Requests.Add(requestedEnergy);
                     }
                 }
 
+                */
 
-
-
+                /*
 
                 // Этап 7: Остатки генераторов  ----------------------------------------------------------------------------
                 prod = localProducers.Count; // Количество производителей в сети
@@ -707,7 +728,7 @@ namespace Automaton
 
 
 
-
+                */
 
                 // Этап 9: Сообщение генераторам о нагрузке ----------------------------------------------------------------------------
                 var j = 0;
@@ -718,6 +739,12 @@ namespace Automaton
                     j++;
                 }
 
+                foreach (var processor in localProcessors)
+                {
+                    var totalOrder = sim.Stores![j].totalRequest + sim2.Stores![j].totalRequest;
+                    processor.AutomaticProces.Produce_order(totalOrder);
+                    j++;
+                }
 
 
 
@@ -752,8 +779,8 @@ namespace Automaton
                 {
                     if (parta.Consumer != null)
                         parta.Consumer!.Consume_receive(pair.Value);
-                    else if (parta.Accumulator != null)
-                        parta.Accumulator!.Store(pair.Value);
+                    else if (parta.Processor != null)
+                        parta.Processor!.Consume_receive(pair.Value);
                 }
                 else
                 {
@@ -904,11 +931,11 @@ namespace Automaton
                 //заполняем нулями
                 if (!sumEnergy.TryGetValue(part2.Key, out _))
                 {
-                    sumEnergy.Add(part2.Key, 0F);
+                    sumEnergy.Add(part2.Key, new List<BusConfigurator>());
                 }
                 else
                 {
-                    sumEnergy[part2.Key] = 0F;
+                    sumEnergy[part2.Key].Clear();
                 }
 
                 part2.Value.aparams[0].signal = BusConfigurator.None;     //обнуляем токи
@@ -948,11 +975,12 @@ namespace Automaton
                         {
                             if (sumEnergy.TryGetValue(pos, out _))
                             {
-                                sumEnergy[pos] += 1;
+                                sumEnergy[pos].Add(packet.configuratorPacket);
                             }
                             else
                             {
-                                sumEnergy.Add(pos, 1);
+                                sumEnergy.Add(pos, new List<BusConfigurator>());
+                                sumEnergy[pos].Add(packet.configuratorPacket);
                             }
                         }
                         
@@ -1039,11 +1067,12 @@ namespace Automaton
         /// <param name="network"></param>
         private void UpdateNetworkInfo(Network network)
         {
+            /*
             // расчет емкости
             var capacity = 0f; // Суммарная емкость сети
             var maxCapacity = 0f; // Максимальная емкость сети
 
-            foreach (var electricAccum in network.Accumulators)
+            foreach (var electricAccum in network.Processors)
             {
                 if (network.PartPositions.Contains(electricAccum.Pos)   // Проверяем, что аккумулятор находится в части сети
                     && parts[electricAccum.Pos].IsLoaded)               // Проверяем, что аккумулятор загружен
@@ -1058,7 +1087,7 @@ namespace Automaton
 
             network.Capacity = capacity;
             network.MaxCapacity = maxCapacity;
-
+            */
 
 
             // Расчет производства (чистая генерация генераторами)
@@ -1068,7 +1097,7 @@ namespace Automaton
                 if (network.PartPositions.Contains(electricProducer.Pos)    // Проверяем, что генератор находится в части сети
                     && parts[electricProducer.Pos].IsLoaded)                // Проверяем, что генератор загружен
                 {
-                    production += Math.Min(electricProducer.getPowerGive(), electricProducer.getPowerOrder());
+                    production += Math.Min(electricProducer.GetPowerGive(), electricProducer.GetPowerOrder());
                 }
             }
 
@@ -1082,7 +1111,7 @@ namespace Automaton
                 if (network.PartPositions.Contains(electricConsumer.Pos) // Проверяем, что потребитель находится в части сети
                     && parts[electricConsumer.Pos].IsLoaded) // Проверяем, что потребитель загружен
                 {
-                    requestSum += electricConsumer.getPowerRequest();
+                    requestSum += electricConsumer.GetPowerRequest();
                 }
             }
 
@@ -1098,7 +1127,7 @@ namespace Automaton
                 if (network.PartPositions.Contains(electricConsumer.Pos) // Проверяем, что потребитель находится в части сети
                     && parts[electricConsumer.Pos].IsLoaded) // Проверяем, что потребитель загружен
                 {
-                    consumption += electricConsumer.getPowerReceive();
+                    consumption += electricConsumer.GetPowerReceive();
                 }
             }
 
@@ -1112,9 +1141,10 @@ namespace Automaton
         // Вынесенный метод сброса компонентов
         private void ResetComponents(ref NetworkPart part)
         {
-            part.Consumer?.Consume_receive(0f);
-            part.Producer?.Produce_order(0f);
-            part.Accumulator?.SetCapacity(0f);
+            part.Consumer?.Consume_receive(null!);
+            part.Processor?.Consume_receive(null!);
+            part.Producer?.Produce_order(0);
+            //part.Processor?.SetCapacity(0f);
             part.Transformator?.setPower(0f);
         }
 
@@ -1161,7 +1191,7 @@ namespace Automaton
                         if (part.Conductor is { } conductor) outNetwork.Conductors.Add(conductor);
                         if (part.Consumer is { } consumer) outNetwork.Consumers.Add(consumer);
                         if (part.Producer is { } producer) outNetwork.Producers.Add(producer);
-                        if (part.Accumulator is { } accumulator) outNetwork.Accumulators.Add(accumulator);
+                        if (part.Processor is { } accumulator) outNetwork.Processors.Add(accumulator);
                         if (part.Transformator is { } transformator) outNetwork.Transformators.Add(transformator);
 
                         outNetwork.PartPositions.Add(position);
@@ -1369,9 +1399,9 @@ namespace Automaton
                     network.Producers.Add(producer);
                 }
 
-                if (part.Accumulator is { } accumulator)
+                if (part.Processor is { } accumulator)
                 {
-                    network.Accumulators.Add(accumulator);
+                    network.Processors.Add(accumulator);
                 }
 
                 if (part.Transformator is { } transformator)
@@ -1511,13 +1541,13 @@ namespace Automaton
         /// </summary>
         /// <param name="position"></param>
         /// <param name="accumulator"></param>
-        public void SetAccumulator(BlockPos position, IAutomaticAccumulator? accumulator) =>
+        public void SetAccumulator(BlockPos position, IAutomaticProcessor? accumulator) =>
             SetComponent(
                 position,
                 accumulator,
-                part => part.Accumulator,
-                (part, a) => part.Accumulator = a,
-                network => network.Accumulators);
+                part => part.Processor,
+                (part, a) => part.Processor = a,
+                network => network.Processors);
 
 
         /// <summary>
@@ -1649,7 +1679,7 @@ namespace Automaton
                 result.NumberOfBlocks = localNetwork.PartPositions.Count;
                 result.NumberOfConsumers = localNetwork.Consumers.Count;
                 result.NumberOfProducers = localNetwork.Producers.Count;
-                result.NumberOfAccumulators = localNetwork.Accumulators.Count;
+                result.NumberOfAccumulators = localNetwork.Processors.Count;
                 result.NumberOfTransformators = localNetwork.Transformators.Count;
                 result.Production = localNetwork.Production;
                 result.Consumption = localNetwork.Consumption;
@@ -1709,10 +1739,10 @@ namespace Automaton
     /// <summary>
     /// Аккумулятор
     /// </summary>
-    internal class Accumulator
+    internal class Processor
     {
-        public readonly IAutomaticAccumulator AutomaticAccum;
-        public Accumulator(IAutomaticAccumulator automaticAccum) => AutomaticAccum = automaticAccum;
+        public readonly IAutomaticProcessor AutomaticProces;
+        public Processor(IAutomaticProcessor automaticProces) => AutomaticProces = automaticProces;
     }
 
 
@@ -1726,6 +1756,7 @@ namespace Automaton
         public int SpeedOfAutomatic = 16;
         public int MultiThreading = 4;
         public int CacheTimeoutCleanupMinutes = 2;
+        public int MaxDistanceForFinding = 200;
     }
 
     /// <summary>

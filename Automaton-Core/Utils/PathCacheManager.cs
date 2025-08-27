@@ -31,10 +31,10 @@ namespace Automaton.Utils
         /// </summary>
         public static bool TryGet(
             BlockPos start, BlockPos end,
-            out BlockPos[] path,
-            out int[] facingFrom,
-            out bool[][] nowProcessed,
-            out Facing[] usedConnections,
+            out BlockPos[]? path,
+            out int[]? facingFrom,
+            out bool[][]? nowProcessed,
+            out Facing[]? usedConnections,
             out int version)
         {
             var key = (start, end);

@@ -12,7 +12,7 @@ namespace Automaton.Utils
         /// <summary>
         /// Требуемое количество товара клиентом.
         /// </summary>
-        public float Required { get; }
+        public int Required { get; }
 
         /// <summary>
         /// Расстояния до каждого магазина, индекс соответствует Id магазина.
@@ -32,7 +32,7 @@ namespace Automaton.Utils
         /// <summary>
         /// Сумма полученного товара от всех магазинов.
         /// </summary>
-        private float _receivedSum;
+        private int _receivedSum;
 
 
         /// <summary>
@@ -46,14 +46,14 @@ namespace Automaton.Utils
         /// <param name="id"></param>
         /// <param name="required"></param>
         /// <param name="storeDistances"></param>
-        public Customer(int id, float required, int[] storeDistances)
+        public Customer(int id, int required, int[] storeDistances)
         {
             Id = id;
             Required = required;
             StoreDistances = storeDistances;
             Received = new float[storeDistances.Length];
             orderedStoreIds = new int[storeDistances.Length];
-            _receivedSum = 0f;
+            _receivedSum = 0;
             _currentStoreIndex = 0;
             UpdateOrderedStores();
         }
@@ -61,7 +61,7 @@ namespace Automaton.Utils
         /// <summary>
         /// Возвращает количество товара, которое клиент еще должен получить.
         /// </summary>
-        public float Remaining => Required - _receivedSum;
+        public int Remaining => Required - _receivedSum;
 
         /// <summary>
         /// Возвращает общее расстояние, которое клиент должен пройти для получения товара.
@@ -100,7 +100,7 @@ namespace Automaton.Utils
         /// <summary>
         /// Добавляет полученное количество от магазина.
         /// </summary>
-        internal void AddReceived(int storeId, float amount)
+        internal void AddReceived(int storeId, int amount)
         {
             Received[storeId] += amount;
             _receivedSum += amount;

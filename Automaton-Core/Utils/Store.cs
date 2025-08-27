@@ -13,12 +13,12 @@ namespace Automaton.Utils
         /// <summary>
         /// Текущее количество товара в магазине.
         /// </summary>
-        public float Stock { get; set; }
+        public int Stock { get; set; }
 
         /// <summary>
         /// Словарь текущих запросов от клиентов, ключ - Id клиента.
         /// </summary>
-        public Dictionary<int, float> CurrentRequests { get; } = new Dictionary<int, float>();
+        public Dictionary<int, int> CurrentRequests { get; } = new Dictionary<int, int>();
 
         /// <summary>
         /// Флаг, указывающий, что магазин больше не имеет товара.
@@ -28,18 +28,18 @@ namespace Automaton.Utils
         /// <summary>
         /// Общее количество товара, запрошенного от магазина за все время.
         /// </summary>
-        public float totalRequest;
+        public int totalRequest;
 
         /// <summary>
         /// Инициализирует новый экземпляр класса Store.
         /// </summary>
         /// <param name="id"></param>
         /// <param name="stock"></param>
-        public Store(int id, float stock)
+        public Store(int id, int stock)
         {
             Id = id;
             Stock = stock;
-            totalRequest = 0f;
+            totalRequest = 0;
         }
 
         /// <summary>
@@ -56,7 +56,7 @@ namespace Automaton.Utils
         /// <param name="customers"></param>
         public void ProcessRequests(List<Customer> customers)
         {
-            float totalRequested = 0;
+            int totalRequested = 0;
             foreach (var req in CurrentRequests.Values)
             {
                 totalRequested += req;
@@ -66,7 +66,7 @@ namespace Automaton.Utils
 
             if (Stock <= 0.001f)
             {
-                Stock = 0.0f;
+                Stock = 0;
                 ImNull = true;
                 ResetRequests();
                 return;
@@ -79,27 +79,27 @@ namespace Automaton.Utils
                 foreach (var kvp in CurrentRequests)
                 {
                     int customerId = kvp.Key;
-                    float requested = kvp.Value;
+                    int requested = kvp.Value;
                     customers[customerId].AddReceived(Id, requested);
                     Stock -= requested;
                 }
             }
             else
             {
-                float ratio = Stock / totalRequested;
+                int ratio = Stock / totalRequested; 
                 foreach (var kvp in CurrentRequests)
                 {
                     int customerId = kvp.Key;
-                    float requested = kvp.Value;
-                    float allocated = requested * ratio;
+                    int requested = kvp.Value;
+                    int allocated = requested * ratio;
                     customers[customerId].AddReceived(Id, allocated);
                     Stock -= allocated;
                 }
             }
 
-            if (Stock <= 0.001f)
+            if (Stock <= 0)
             {
-                Stock = 0.0f;
+                Stock = 0;
                 ImNull = true;
             }
 

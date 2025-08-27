@@ -5,31 +5,32 @@ namespace Automaton.Interface;
 public interface IAutomaticProducer
 {
     /// <summary>
-    /// Координата аккумулятора
+    /// Координата
     /// </summary>
     public BlockPos Pos { get; }
 
     /// <summary>
     /// Система запрашивает у генератора сколько ей нужно в данный момент выдать
     /// </summary>
-    public void Produce_order(float amount);
+    /// <param name="amount"></param>
+    public void Produce_order(int amount);
 
     /// <summary>
     /// Сколько может выдать генератор сейчас максимум
     /// </summary>
     /// <returns></returns>
-    public float getPowerGive();
+    public int GetPowerGive();
 
     /// <summary>
     /// Сколько в данный момент просят с генератора (нагрузка)
     /// </summary>
     /// <returns></returns>
-    public float getPowerOrder();
+    public int GetPowerOrder();
 
     /// <summary>
     /// Генератор выдает энергию в систему
     /// </summary>
-    public float Produce_give();
+    public int Produce_give();
 
     /// <summary>
     /// Обновляем Entity

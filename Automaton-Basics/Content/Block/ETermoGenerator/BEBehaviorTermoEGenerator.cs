@@ -12,10 +12,10 @@ namespace Automaton.Content.Block.ETermoGenerator;
 
 public class BEBehaviorTermoEGenerator : BlockEntityBehavior, IAutomaticProducer
 {
-    private float PowerOrder;           // Просят столько энергии (сохраняется)
+    private int PowerOrder;           // Просят столько энергии (сохраняется)
     public const string PowerOrderKey = "automaton:powerOrder";
 
-    private float PowerGive;           // Отдаем столько энергии (сохраняется)
+    private int PowerGive;           // Отдаем столько энергии (сохраняется)
     public const string PowerGiveKey = "automaton:powerGive";
 
 
@@ -54,7 +54,7 @@ public class BEBehaviorTermoEGenerator : BlockEntityBehavior, IAutomaticProducer
 
 
 
-    public float Produce_give()
+    public int Produce_give()
     {
         BlockEntityETermoGenerator? entity = null;
         if (Blockentity is BlockEntityETermoGenerator temp)
@@ -62,7 +62,7 @@ public class BEBehaviorTermoEGenerator : BlockEntityBehavior, IAutomaticProducer
             entity = temp;
             if (temp.GenTemp > 20)
             {
-                PowerGive = temp.Power;
+                PowerGive = (int) temp.Power;
             }
             else
                 PowerGive = 0;

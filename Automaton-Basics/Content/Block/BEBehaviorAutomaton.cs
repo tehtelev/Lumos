@@ -25,7 +25,7 @@ public class BEBehaviorAutomaton : BlockEntityBehavior
     public const string IsLoadedKey = "automaton:isloaded";
 
 
-    private IAutomaticAccumulator? accumulator;
+    //private IAutomaticAccumulator? accumulator;
     private IAutomaticConsumer? consumer;
     private IAutomaticConductor? conductor;
     private IAutomaticProducer? producer;
@@ -153,7 +153,7 @@ public class BEBehaviorAutomaton : BlockEntityBehavior
         this.consumer = null;
         this.conductor = null;
         this.producer = null;
-        this.accumulator = null;
+        //this.accumulator = null;
         this.transformator = null;
 
         foreach (var entityBehavior in this.Blockentity.Behaviors)
@@ -168,9 +168,9 @@ public class BEBehaviorAutomaton : BlockEntityBehavior
                     this.producer = producer;
                     break;
 
-                case IAutomaticAccumulator { } accumulator:
-                    this.accumulator = accumulator;
-                    break;
+                //case IAutomaticAccumulator { } accumulator:
+                //    this.accumulator = accumulator;
+                //    break;
 
                 case IAutomaticTransformator { } transformator:
                     this.transformator = transformator;
@@ -186,7 +186,7 @@ public class BEBehaviorAutomaton : BlockEntityBehavior
         system.SetConductor(this.Blockentity.Pos, this.conductor);
         system.SetConsumer(this.Blockentity.Pos, this.consumer);
         system.SetProducer(this.Blockentity.Pos, this.producer);
-        system.SetAccumulator(this.Blockentity.Pos, this.accumulator);
+        //system.SetAccumulator(this.Blockentity.Pos, this.accumulator);
         system.SetTransformator(this.Blockentity.Pos, this.transformator);
 
         //если обновляется connection или interrupt, то нафиг присваивать параметры

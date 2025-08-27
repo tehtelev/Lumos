@@ -4,7 +4,7 @@ using Vintagestory.API.MathTools;
 
 namespace Automaton.Interface;
 
-public interface IAutomaticConsumer
+public interface IAutomaticProcessor
 {
     /// <summary>
     /// Координата
@@ -22,10 +22,6 @@ public interface IAutomaticConsumer
     /// <param name="amount"></param>
     public void Consume_receive(List<BusConfigurator> amount);
 
-    /// <summary>
-    /// Обновляем Entity
-    /// </summary>
-    public void Update();
 
     /// <summary>
     /// Сколько получает в данный момент потребитель
@@ -38,4 +34,33 @@ public interface IAutomaticConsumer
     /// </summary>
     /// <returns></returns>
     public int GetPowerRequest();
+
+    /// <summary>
+    /// Система запрашивает у генератора сколько ей нужно в данный момент выдать
+    /// </summary>
+    /// <param name="amount"></param>
+    public void Produce_order(int amount);
+
+    /// <summary>
+    /// Сколько может выдать генератор сейчас максимум
+    /// </summary>
+    /// <returns></returns>
+    public int GetPowerGive();
+
+    /// <summary>
+    /// Сколько в данный момент просят с генератора (нагрузка)
+    /// </summary>
+    /// <returns></returns>
+    public int GetPowerOrder();
+
+    /// <summary>
+    /// Генератор выдает энергию в систему
+    /// </summary>
+    public int Produce_give();
+
+
+    /// <summary>
+    /// Обновляем Entity
+    /// </summary>
+    public void Update();
 }

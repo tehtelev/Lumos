@@ -9,7 +9,7 @@ namespace Automaton.Utils
     /// </summary>
     public class Network
     {
-        public readonly HashSet<IAutomaticAccumulator> Accumulators = new();  //Аккумуляторы
+        public readonly HashSet<IAutomaticProcessor> Processors = new();  //Аккумуляторы
         public readonly HashSet<IAutomaticConsumer> Consumers = new();       //Потребители
         public readonly HashSet<IAutomaticConductor> Conductors = new();       //Проводники
         public readonly HashSet<IAutomaticProducer> Producers = new();           //Генераторы
