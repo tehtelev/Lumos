@@ -4,9 +4,8 @@ using Vintagestory.API.MathTools;
 
 namespace Automaton.Utils
 {
-    
     /// <summary>
-    /// Глобальный, не зависящий от сети кэш путей с удалением по TTL.
+    /// Глобальный кэш путей с быстрым ulong-ключом и очисткой по TTL.
     /// </summary>
     public static class PathCacheManager
     {
@@ -20,24 +19,55 @@ namespace Automaton.Utils
             public int version;
         }
 
-        // TTL, по истечении которого неиспользуемые записи удаляются
         private static readonly TimeSpan EntryTtl = TimeSpan.FromMinutes(Automaton.CacheTimeoutCleanupMinutes);
 
-        // Сам кэш, ключом служит только (start, end, version)
-        private static readonly ConcurrentDictionary<(BlockPos, BlockPos), Entry> cache = new();
+        // Заменили (BlockPos, BlockPos) на ulong
+        private static readonly ConcurrentDictionary<ulong, Entry> cache = new();
+
+        /// <summary>
+        /// Быстрый хэш для пары позиций.
+        /// Учитывает X, Y, Z и Dimension для обеих точек.
+        /// </summary>
+        private static ulong HashPair(BlockPos a, BlockPos b)
+        {
+            unchecked
+            {
+                ulong ha = HashBlockPos(a);
+                ulong hb = HashBlockPos(b);
+                return ha ^ (hb * 0x9E3779B97F4A7C15UL); // перемешивание золотым сечением
+            }
+        }
+
+        private static ulong HashBlockPos(BlockPos pos)
+        {
+            unchecked
+            {
+                // Сдвиги для устранения отрицательных значений
+                ulong dim = (ulong)(uint)pos.dimension & 0xFUL;          // 4 бита
+                ulong x = (ulong)(uint)(pos.X + 8388608) & 0xFFFFFFUL;   // 24 бита
+                ulong y = (ulong)(uint)(pos.Y + 2048) & 0xFFFUL;         // 12 бит
+                ulong z = (ulong)(uint)(pos.Z + 8388608) & 0xFFFFFFUL;   // 24 бита
+
+                // Формируем 64-битный ключ: [DIM(4)][X(24)][Y(12)][Z(24)]
+                return (dim << 60) ^ (x << 36) ^ (y << 24) ^ z;
+            }
+        }
+
+
+
 
         /// <summary>
         /// Попытаться получить путь из кэша.
         /// </summary>
         public static bool TryGet(
             BlockPos start, BlockPos end,
-            out BlockPos[]? path,
-            out int[]? facingFrom,
-            out bool[][]? nowProcessed,
-            out Facing[]? usedConnections,
+            out BlockPos[] path,
+            out int[] facingFrom,
+            out bool[][] nowProcessed,
+            out Facing[] usedConnections,
             out int version)
         {
-            var key = (start, end);
+            ulong key = HashPair(start, end);
             if (cache.TryGetValue(key, out var entry))
             {
                 entry.LastAccessed = DateTime.UtcNow;
@@ -57,10 +87,8 @@ namespace Automaton.Utils
             return false;
         }
 
-
-        
         /// <summary>
-        /// Сохранить в кэше новый вычисленный путь (или обновить существующий).
+        /// Сохранить в кэше новый путь или обновить существующий.
         /// </summary>
         public static void AddOrUpdate(
             BlockPos start, BlockPos end, int currentVersion,
@@ -69,10 +97,10 @@ namespace Automaton.Utils
             bool[][] nowProcessedFaces,
             Facing[] usedConnections)
         {
-            var key = (start, end);
-            // При обновлении существующей записи не сбрасываем LastAccessed, чтобы не мешать очистке
+            ulong key = HashPair(start, end);
+
             cache.AddOrUpdate(key,
-                k => new Entry
+                _ => new Entry
                 {
                     Path = path,
                     FacingFrom = facingFrom,
@@ -81,29 +109,23 @@ namespace Automaton.Utils
                     LastAccessed = DateTime.UtcNow,
                     version = currentVersion
                 },
-                (k, existing) =>
+                (_, existing) =>
                 {
                     existing.Path = path;
                     existing.FacingFrom = facingFrom;
                     existing.NowProcessedFaces = nowProcessedFaces;
                     existing.UsedConnections = usedConnections;
                     existing.version = currentVersion;
-                    // сохраняем existing.LastAccessed без изменения
                     return existing;
                 });
         }
 
-
-
         /// <summary>
-        /// Удалить все записи, к которым не обращались в течение TTL.
-        /// Вызывать периодически (например, раз в секунду или каждые N тиков).
+        /// Очистка старых записей, не использовавшихся дольше TTL.
         /// </summary>
         public static void Cleanup()
         {
             var cutoff = DateTime.UtcNow - EntryTtl;
-
-            // Перебираем snapshot словаря и сразу удаляем устаревшие элементы
             foreach (var pair in cache)
             {
                 if (pair.Value.LastAccessed < cutoff)
@@ -113,16 +135,13 @@ namespace Automaton.Utils
             }
         }
 
-
         /// <summary>
-        /// Принудительно удаляет из кэша все записи для указанных координат start и end
-        /// независимо от version.
+        /// Удалить все записи для указанных позиций.
         /// </summary>
         public static void RemoveAll(BlockPos start, BlockPos end)
         {
-            var key = (start, end);
+            ulong key = HashPair(start, end);
             cache.TryRemove(key, out _);
         }
     }
-    
 }
