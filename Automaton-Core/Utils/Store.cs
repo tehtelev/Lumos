@@ -54,7 +54,7 @@ namespace Automaton.Utils
         /// Обрабатывает запросы от клиентов и распределяет товар по запросам.
         /// </summary>
         /// <param name="customers"></param>
-        public void ProcessRequests(List<Customer> customers)
+        public void ProcessRequests(Customer[] customers)
         {
             int totalRequested = 0;
             foreach (var req in CurrentRequests.Values)

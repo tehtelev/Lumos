@@ -1,18 +1,30 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 
 namespace Automaton.Utils
 {
     public class Simulation
     {
+
+
+        /// Массив для хранения всех расстояний между клиентами и магазинами
+        /// </summary>
+        public int[] Distances = new int[1];
+
+
+        /// <summary>
+        /// Буффер для хранения расстояний между клиентами и магазинами.
+        /// </summary>
+        public int[] DistBuffer = new int[0];
         /// <summary>
         /// Список клиентов, участвующих в симуляции.
         /// </summary>
-        public List<Customer>? Customers { get; set; }
+        public Customer[] Customers { get; set; }
 
         /// <summary>
         /// Список магазинов, участвующих в симуляции.
         /// </summary>
-        public List<Store>? Stores { get; set; }
+        public Store[] Stores { get; set; }
 
         /// <summary>
         /// Запускает симуляцию распределения товара между клиентами и магазинами.
@@ -23,7 +35,7 @@ namespace Automaton.Utils
             if (Customers == null || Stores == null)
                 return;
 
-            for (int i = 0; i < Stores.Count; i++)
+            for (int i = 0; i < Stores.Length; i++)
             {
                 Stores[i].totalRequest = 0;
             }
@@ -33,12 +45,12 @@ namespace Automaton.Utils
 
             do
             {
-                for (int i = 0; i < Stores.Count; i++)
+                for (int i = 0; i < Stores.Length; i++)
                 {
                     Stores[i].ResetRequests();
                 }
 
-                for (int c = 0; c < Customers.Count; c++)
+                for (int c = 0; c < Customers.Length; c++)
                 {
                     var customer = Customers[c];
                     customer.ResetStoreIndex();
@@ -50,13 +62,13 @@ namespace Automaton.Utils
                     ProcessStoresArray(customer, remaining, availableStoreIds);
                 }
 
-                for (int i = 0; i < Stores.Count; i++)
+                for (int i = 0; i < Stores.Length; i++)
                 {
                     Stores[i].ProcessRequests(Customers);
                 }
 
                 hasActiveStores = false;
-                for (int i = 0; i < Stores.Count; i++)
+                for (int i = 0; i < Stores.Length; i++)
                 {
                     if (!Stores[i].ImNull)
                     {
@@ -66,7 +78,7 @@ namespace Automaton.Utils
                 }
 
                 hasPendingCustomers = false;
-                for (int i = 0; i < Customers.Count; i++)
+                for (int i = 0; i < Customers.Length; i++)
                 {
                     if (Customers[i].Remaining > 0.001f)
                     {
@@ -105,8 +117,8 @@ namespace Automaton.Utils
         /// </summary>
         public void Reset()
         {
-            Stores?.Clear();
-            Customers?.Clear();
+            Stores=Array.Empty<Store>();
+            Customers=Array.Empty<Customer>();
         }
     }
 }
