@@ -7,22 +7,22 @@ namespace Automaton.Utils
         /// <summary>
         /// Уникальный идентификатор клиента.
         /// </summary>
-        public int Id { get; }
+        public int Id { get; set; }
 
         /// <summary>
         /// Требуемое количество товара клиентом.
         /// </summary>
-        public int Required { get; }
+        public int Required { get; set; }
 
         /// <summary>
         /// Расстояния до каждого магазина, индекс соответствует Id магазина.
         /// </summary>
-        public int[] StoreDistances { get; }
+        public int[] StoreDistances { get; set; }
 
         /// <summary>
         /// Полученное количество товара от каждого магазина, индекс соответствует Id магазина.
         /// </summary>
-        public float[] Received { get; }
+        public int[] Received { get; set; }
 
         /// <summary>
         /// Массив идентификаторов магазинов, отсортированных по расстоянию до клиента.
@@ -51,7 +51,7 @@ namespace Automaton.Utils
             Id = id;
             Required = required;
             StoreDistances = storeDistances;
-            Received = new float[storeDistances.Length];
+            Received = new int[storeDistances.Length];
             orderedStoreIds = new int[storeDistances.Length];
             _receivedSum = 0;
             _currentStoreIndex = 0;
@@ -123,5 +123,29 @@ namespace Automaton.Utils
         /// Проверяет, есть ли еще магазины.
         /// </summary>
         internal bool HasMoreStores() => _currentStoreIndex < orderedStoreIds.Length;
+
+        internal void Update(int id, int required, int[] storeDistances)
+        {
+            Id = id;
+            Required = required;
+
+            if (StoreDistances == null || StoreDistances.Length != storeDistances.Length)
+            {
+                StoreDistances = storeDistances;
+                Received = new int[storeDistances.Length];
+                orderedStoreIds = new int[storeDistances.Length];
+                UpdateOrderedStores();
+            }
+            else
+            {
+                Array.Copy(storeDistances, StoreDistances, storeDistances.Length);
+                Array.Clear(Received, 0, Received.Length);
+                UpdateOrderedStores();
+            }
+
+            _receivedSum = 0;
+            _currentStoreIndex = 0;
+        }
     }
+
 }

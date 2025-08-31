@@ -8,7 +8,7 @@ namespace Automaton.Utils
         /// <summary>
         /// Уникальный идентификатор магазина.
         /// </summary>
-        public int Id { get; }
+        public int Id { get; set; }
 
         /// <summary>
         /// Текущее количество товара в магазине.
@@ -104,6 +104,14 @@ namespace Automaton.Utils
             }
 
             ResetRequests();
+        }
+
+        internal void Update(int id, int stock)
+        {
+            Id = id;
+            Stock = stock;
+            totalRequest = 0;
+            ImNull = false;
         }
     }
 }

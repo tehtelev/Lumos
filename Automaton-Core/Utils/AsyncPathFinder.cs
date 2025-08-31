@@ -1,4 +1,5 @@
-﻿using System;
+﻿using Automaton.Utils;
+using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Threading;
@@ -16,7 +17,7 @@ namespace Automaton.Utils
         private readonly int maxConcurrentTasks;                            // Максимальное количество параллельных задач
         private Dictionary<BlockPos, NetworkPart> parts;                    // Словарь частей сети
         private int sizeOfQueue;
-
+        private int sizeOfNotBusy;
 
         /// <summary>
         /// Инициализирует новый экземпляр класса AsyncPathFinder.
@@ -28,6 +29,8 @@ namespace Automaton.Utils
             this.parts = parts;
             this.maxConcurrentTasks = maxConcurrentTasks;
             this.sizeOfQueue = 500 * maxConcurrentTasks;
+            this.sizeOfNotBusy = 100 * maxConcurrentTasks;
+
 
             // Запускаем задачи-потребители один раз при старте
             for (int i = 0; i < maxConcurrentTasks; i++)
@@ -48,7 +51,7 @@ namespace Automaton.Utils
         public void EnqueueRequest(BlockPos start, BlockPos end, Network network)
         {
             // если очередь пуста считай, то можно снова заполнять
-            if (requestQueue.Count < 100)
+            if (requestQueue.Count < sizeOfNotBusy)
                 busy = false;
 
             // если очередь меньше sizeOfQueue и не занята, то добавляем запрос
@@ -76,7 +79,7 @@ namespace Automaton.Utils
                 if (requestQueue.Count == 0)
                 {
                     pathFinder.Clear();
-                    Thread.Sleep(100); // Если очередь пуста, ждем 100 мс
+                    Thread.Sleep(50); // Если очередь пуста, ждем 100 мс
                 }
 
                 // Пытаемся извлечь запрос из очереди
@@ -96,7 +99,7 @@ namespace Automaton.Utils
                             BlockPos copiedEnd = request.End.Copy();
 
                             // Глубокое копирование массива path
-                            BlockPos[] copiedPath =  new BlockPos[path.Length];
+                            BlockPos[] copiedPath = new BlockPos[path.Length];
                             for (int i = 0; i < path.Length; i++)
                             {
                                 copiedPath[i] = path[i].Copy();
@@ -104,7 +107,7 @@ namespace Automaton.Utils
 
 
                             // Копирование массива facing
-                            int[] copiedFacing = new int[facing.Length];
+                            byte[] copiedFacing = new byte[facing.Length];
                             Array.Copy(facing, copiedFacing, facing.Length);
 
 
@@ -133,18 +136,7 @@ namespace Automaton.Utils
                                 copiedProcessed,
                                 copiedUsedConn);
                         }
-                        else
-                        {
-                            // Добавление скопированных данных в кэш
-                            PathCacheManager.AddOrUpdate(
-                                request.Start.Copy(),
-                                request.End.Copy(),
-                                request.Network.version,
-                                null,
-                                null,
-                                null,
-                                null);
-                        }
+
 
 
                     }

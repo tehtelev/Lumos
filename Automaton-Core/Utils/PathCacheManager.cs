@@ -1,5 +1,7 @@
-﻿using System;
+﻿using Automaton.Utils;
+using System;
 using System.Collections.Concurrent;
+using Vintagestory.API.Config;
 using Vintagestory.API.MathTools;
 
 namespace Automaton.Utils
@@ -12,7 +14,7 @@ namespace Automaton.Utils
         private class Entry
         {
             public BlockPos[]? Path;
-            public int[]? FacingFrom;
+            public byte[]? FacingFrom;
             public bool[][]? NowProcessedFaces;
             public Facing[]? UsedConnections;
             public DateTime LastAccessed;
@@ -60,9 +62,10 @@ namespace Automaton.Utils
         /// Попытаться получить путь из кэша.
         /// </summary>
         public static bool TryGet(
-            BlockPos start, BlockPos end,
+            BlockPos start,
+            BlockPos end,
             out BlockPos[] path,
-            out int[] facingFrom,
+            out byte[] facingFrom,
             out bool[][] nowProcessed,
             out Facing[] usedConnections,
             out int version)
@@ -91,9 +94,11 @@ namespace Automaton.Utils
         /// Сохранить в кэше новый путь или обновить существующий.
         /// </summary>
         public static void AddOrUpdate(
-            BlockPos start, BlockPos end, int currentVersion,
+            BlockPos start,
+            BlockPos end,
+            int currentVersion,
             BlockPos[] path,
-            int[] facingFrom,
+            byte[] facingFrom,
             bool[][] nowProcessedFaces,
             Facing[] usedConnections)
         {

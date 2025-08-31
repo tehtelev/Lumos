@@ -6,25 +6,26 @@ namespace Automaton.Utils
     public class Simulation
     {
 
-
-        /// Массив для хранения всех расстояний между клиентами и магазинами
-        /// </summary>
-        public int[] Distances = new int[1];
-
+        public int CountWorkingStores;
+        public int CountWorkingCustomers;
 
         /// <summary>
-        /// Буффер для хранения расстояний между клиентами и магазинами.
+        /// Массив для хранения всех расстояний между клиентами и магазинами
         /// </summary>
-        public int[] DistBuffer = new int[0];
+        public int[] Distances = new int[100];
+
+
+
+
         /// <summary>
         /// Список клиентов, участвующих в симуляции.
         /// </summary>
-        public Customer[] Customers { get; set; }
+        public Customer[] Customers = new Customer[100];
 
         /// <summary>
         /// Список магазинов, участвующих в симуляции.
         /// </summary>
-        public Store[] Stores { get; set; }
+        public Store[] Stores = new Store[100];
 
         /// <summary>
         /// Запускает симуляцию распределения товара между клиентами и магазинами.

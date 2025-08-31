@@ -329,15 +329,22 @@ namespace Automaton
             List<int> producerGive,
             Simulation sim)
         {
-            var cP = consumerPositions.Count; // Количество потребителей
-            var pP = producerPositions.Count; // Количество производителей
+            var cP = sim.CountWorkingCustomers = consumerPositions.Count; // Количество потребителей
+            var pP = sim.CountWorkingStores = producerPositions.Count; // Количество производителей
+
 
             BlockPos start;
             BlockPos end;
 
-            // обновляем массив для расстояний
+            // обновляем массив для расстояний, магазинов и клиентов
             if (sim.Distances.Length < cP * pP)
                 Array.Resize(ref sim.Distances, cP * pP);
+
+            if (sim.Stores == null || sim.Stores.Length < pP)
+                sim.Stores = new Store[pP];
+
+            if (sim.Customers == null || sim.Customers.Length < cP)
+                sim.Customers = new Customer[cP];
 
 
             for (var i = 0; i < cP; i++)
@@ -362,27 +369,34 @@ namespace Automaton
                 }
             }
 
-            sim.Stores = new Store[pP];
 
-            sim.Customers = new Customer[cP];
-
-            for (var j = 0; j < pP; j++)
+            // инициализируем магазины
+            for (int j = 0; j < pP; j++)
             {
-                sim.Stores[j] = new Store(j, producerGive[j]);
+                var store = sim.Stores[j];
+                if (store == null)
+                    sim.Stores[j] = store = new Store(j, producerGive[j]);
+                store.Update(j, producerGive[j]);
             }
 
 
-            // буффер для расстояний (сбрасывать размер всегда!)
-            Array.Resize(ref sim.DistBuffer, pP);
 
-            for (var i = 0; i < cP; i++)
+
+            // инициализируем клиентов
+            for (int i = 0; i < cP; i++)
             {
-                for (var j = 0; j < pP; j++)
+                var DistBuffer = new int[pP];
+
+                for (int j = 0; j < pP; j++)
                 {
-                    sim.DistBuffer[j] = sim.Distances[i * pP + j];
+                    DistBuffer[j] = sim.Distances[i * pP + j];
                 }
 
-                sim.Customers[i] = new Customer(i, consumerRequests[i], sim.DistBuffer);
+                var cust = sim.Customers[i];
+                if (cust == null)
+                    sim.Customers[i] = cust = new Customer(i, consumerRequests[i], DistBuffer);
+                else
+                    cust.Update(i, consumerRequests[i], DistBuffer);
             }
 
 
@@ -467,7 +481,7 @@ namespace Automaton
                 return;
 
             //Очищаем старые пути
-            if (sapi.World.Rand.NextDouble() < 0.1d)
+            if (sapi.World.Rand.NextDouble() < 0.01d)
             {
                 PathCacheManager.Cleanup();
             }

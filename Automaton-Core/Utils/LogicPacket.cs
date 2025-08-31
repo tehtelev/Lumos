@@ -28,7 +28,7 @@ namespace Automaton.Utils
         /// <summary>
         /// Откуда мы пришли в каждой точке пути.
         /// </summary>
-        public readonly int[] facingFrom;
+        public readonly byte[] facingFrom;
 
         /// <summary>
         /// Какие грани каждого блока уже обработаны.
@@ -55,7 +55,7 @@ namespace Automaton.Utils
             BusConfigurator ConfiguratorPacket,
             int CurrentIndex,
             BlockPos[] Path,
-            int[] FacingFrom,
+            byte[] FacingFrom,
             bool[][] NowProcessedFaces,
             Facing[] UsedConnections
         )
