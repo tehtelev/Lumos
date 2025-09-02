@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using Vintagestory.API.MathTools;
 using Vintagestory.API.Util;
@@ -107,7 +108,7 @@ public class PathFinder
     private static FastPosKey defaultKey = new FastPosKey(0, 0, 0, 0);
 
     // Получение NetworkPart по FastPosKey с переиспользованием lookupPos
-    private bool TryGetPart(Dictionary<BlockPos, NetworkPart> parts, FastPosKey key, out NetworkPart part)
+    private bool TryGetPart(ConcurrentDictionary<BlockPos, NetworkPart> parts, FastPosKey key, out NetworkPart part)
     {
         lookupPos.X = key.X;
         lookupPos.Y = key.Y;
@@ -131,7 +132,7 @@ public class PathFinder
     /// Основной поиск пути
     /// </summary>
     public (BlockPos[], byte[], bool[][], Facing[]) FindShortestPath(
-        BlockPos start, BlockPos end, Network network, Dictionary<BlockPos, NetworkPart> parts)
+        BlockPos start, BlockPos end, Network network, ConcurrentDictionary<BlockPos, NetworkPart> parts)
     {
         // Инициализация коллекций
         startBlockFacing.Clear();
@@ -350,7 +351,7 @@ public class PathFinder
     // Получение соседних позиций с учетом направлений и соединений
     private (List<FastPosKey>, List<byte>, bool[], bool[]) GetNeighbors(
     FastPosKey pos, bool[] processFaces, byte startFace,
-    Network network, Dictionary<BlockPos, NetworkPart> parts)
+    Network network, ConcurrentDictionary<BlockPos, NetworkPart> parts)
     {
         neighborsFast.Clear();
         NeighborsFace.Clear();

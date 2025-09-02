@@ -11,6 +11,7 @@ using Automaton.Utils;
 using Vintagestory.GameContent;
 using static Automaton.Automaton;
 using Vintagestory.API.Util;
+using System.Collections.Concurrent;
 
 
 [assembly: ModDependency("game", "1.21.0-rc.4")]
@@ -30,7 +31,7 @@ namespace Automaton
     public class Automaton : ModSystem
     {
         public readonly HashSet<Network> networks = new();
-        public readonly Dictionary<BlockPos, NetworkPart> parts = new(); // Хранит все элементы всех цепей
+        public readonly ConcurrentDictionary<BlockPos, NetworkPart> parts = new(); // Хранит все элементы всех цепей
 
         private Dictionary<BlockPos, List<LogicPacket>> packetsByPosition = new(); //Словарь для хранения пакетов по позициям
 

@@ -14,7 +14,7 @@ namespace Automaton.Utils
         private volatile bool isRunning = true;                             // Флаг для управления остановкой
         private bool busy = false;                                          // Флаг для отслеживания загрузки очереди
         private readonly int maxConcurrentTasks;                            // Максимальное количество параллельных задач
-        private Dictionary<BlockPos, NetworkPart> parts;                    // Словарь частей сети
+        private ConcurrentDictionary<BlockPos, NetworkPart> parts;                    // Словарь частей сети
         private int sizeOfQueue;
         private int sizeOfNotBusy;
 
@@ -23,7 +23,7 @@ namespace Automaton.Utils
         /// </summary>
         /// <param name="parts"></param>
         /// <param name="maxConcurrentTasks"></param>
-        public AsyncPathFinder(Dictionary<BlockPos, NetworkPart> parts, int maxConcurrentTasks)
+        public AsyncPathFinder(ConcurrentDictionary<BlockPos, NetworkPart> parts, int maxConcurrentTasks)
         {
             this.parts = parts;
             this.maxConcurrentTasks = maxConcurrentTasks;
