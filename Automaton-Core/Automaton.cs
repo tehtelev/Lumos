@@ -148,6 +148,8 @@ namespace Automaton
             networks.Clear();
             parts.Clear();
 
+            PathCacheManager.Dispose();
+            localPackets.Clear();
         }
 
 

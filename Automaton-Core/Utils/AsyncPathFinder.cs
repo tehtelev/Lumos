@@ -1,5 +1,4 @@
-﻿using Automaton.Utils;
-using System;
+﻿using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Threading;
@@ -28,8 +27,8 @@ namespace Automaton.Utils
         {
             this.parts = parts;
             this.maxConcurrentTasks = maxConcurrentTasks;
-            this.sizeOfQueue = 500 * maxConcurrentTasks;
-            this.sizeOfNotBusy = 100 * maxConcurrentTasks;
+            this.sizeOfQueue = 1000 * maxConcurrentTasks;
+            this.sizeOfNotBusy = 200 * maxConcurrentTasks;
 
 
             // Запускаем задачи-потребители один раз при старте
@@ -98,51 +97,24 @@ namespace Automaton.Utils
                             BlockPos copiedStart = request.Start.Copy();
                             BlockPos copiedEnd = request.End.Copy();
 
-                            // Глубокое копирование массива path
-                            BlockPos[] copiedPath = new BlockPos[path.Length];
-                            for (int i = 0; i < path.Length; i++)
-                            {
-                                copiedPath[i] = path[i].Copy();
-                            }
-
-
-                            // Копирование массива facing
-                            byte[] copiedFacing = new byte[facing.Length];
-                            Array.Copy(facing, copiedFacing, facing.Length);
-
-
-                            // Глубокое копирование двумерного массива processed
-                            bool[][] copiedProcessed = new bool[processed.Length][];
-                            for (int i = 0; i < processed.Length; i++)
-                            {
-                                copiedProcessed[i] = new bool[processed[i].Length];
-                                Array.Copy(processed[i], copiedProcessed[i], processed[i].Length);
-
-                            }
-
-
-                            // Копирование массива usedConn
-                            Facing[] copiedUsedConn = new Facing[usedConn.Length];
-                            Array.Copy(usedConn, copiedUsedConn, usedConn.Length);
-
 
                             // Добавление скопированных данных в кэш
                             PathCacheManager.AddOrUpdate(
                                 copiedStart,
                                 copiedEnd,
                                 request.Network.version,
-                                copiedPath,
-                                copiedFacing,
-                                copiedProcessed,
-                                copiedUsedConn);
+                                path,
+                                facing,
+                                processed,
+                                usedConn);
                         }
 
 
 
                     }
-                    catch
+                    catch (Exception ex)
                     {
-                        //api.Logger.Error($"Ошибка в асинхронном поиске пути от {request.Start} до {request.End}: {ex.Message}");
+                        //sapi.Logger.Error($"Ошибка в асинхронном поиске пути от {request.Start} до {request.End}: {ex.Message}");
                     }
 
 

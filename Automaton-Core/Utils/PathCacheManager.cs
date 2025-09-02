@@ -1,5 +1,4 @@
-﻿using Automaton.Utils;
-using System;
+﻿using System;
 using System.Collections.Concurrent;
 using Vintagestory.API.Config;
 using Vintagestory.API.MathTools;
@@ -148,5 +147,14 @@ namespace Automaton.Utils
             ulong key = HashPair(start, end);
             cache.TryRemove(key, out _);
         }
+
+        /// <summary>
+        /// Удалить все записи 
+        /// </summary>
+        public static void Dispose()
+        {
+            cache.Clear();
+        }
+
     }
 }
