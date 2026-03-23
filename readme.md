@@ -1,7 +1,7 @@
-# Automaton
+# Falling blocks spawn manager
 
-Brings automatics into the game!
+This mod limits the number of unstable rock, soil, gravel, and sand blocks falling simultaneously when collapses are enabled.
 
 ## About
 
-Automaton is a Mod for the game [VintageStory](https://www.vintagestory.at/).
+Falling blocks spawn manager is a Mod for the game [VintageStory](https://www.vintagestory.at/).
