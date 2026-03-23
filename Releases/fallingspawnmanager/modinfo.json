@@ -3,8 +3,7 @@
   "modid": "fallingspawnmanager",
   "name": "Falling blocks spawn manager",
   "authors": [
-    "Tehtelev",
-    "Kotl"
+    "Tehtelev"
   ],
   "description": "Limits the number of blocks falling at the same time",
   "Version": "0.0.1",
