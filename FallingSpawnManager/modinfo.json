@@ -1,0 +1,14 @@
+﻿{
+  "type": "code",
+  "modid": "fallingspawnmanager",
+  "name": "Falling blocks spawn manager",
+  "authors": [
+    "Tehtelev",
+    "Kotl"
+  ],
+  "description": "Limits the number of blocks falling at the same time",
+  "Version": "0.0.1",
+  "dependencies": {
+    "game": "0.0.1"
+  }
+}

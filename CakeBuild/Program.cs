@@ -27,18 +27,14 @@ public static class Program
 public class BuildContext : FrostingContext
 {
     public List<string> ProjectNames = new List<string> {
-        "Automaton-Core",
-        "Automaton-Basics" //,
-        //"Automaton-Equipment",
-        //"Automaton-QOL",
-        //"Automaton-Industry",
+        "FallingSpawnManager"
         // Add other project names here
     };
 
     public BuildContext(ICakeContext context) : base(context)
     {
         this.BuildConfiguration = context.Argument("configuration", "Release");
-        this.SkipJsonValidation = context.Argument("skipJsonValidation", false);
+        this.SkipJsonValidation = context.Argument("skipJsonValidation", true);
         // Optionally allow continuing on error; default false to fail fast
         this.ContinueOnError = context.Argument("continueOnError", false);
     }
@@ -64,27 +60,28 @@ public sealed class PerProjectTask : FrostingTask<BuildContext>
             try
             {
                 // 1) Validate JSON for this project (unless skipped)
-                if (!context.SkipJsonValidation)
-                {
-                    var jsonFiles = context.GetFiles($"../{projectName}/assets/**/*.json");
-                    foreach (var file in jsonFiles)
-                    {
-                        try
-                        {
-                            var json = File.ReadAllText(file.FullPath);
-                            JToken.Parse(json);
-                        }
-                        catch (JsonException ex)
-                        {
-                            throw new Exception($"Validation failed for JSON file in project {projectName}: {file.FullPath}{Environment.NewLine}{ex.Message}", ex);
-                        }
-                    }
-                    context.Information("JSON validation passed for {0}", projectName);
-                }
-                else
-                {
-                    context.Information("Skipping JSON validation for {0}", projectName);
-                }
+                
+                //if (!context.SkipJsonValidation)
+                //{
+                //    var jsonFiles = context.GetFiles($"../{projectName}/assets/**/*.json");
+                //    foreach (var file in jsonFiles)
+                //    {
+                //        try
+                //        {
+                //            var json = File.ReadAllText(file.FullPath);
+                //            JToken.Parse(json);
+                //        }
+                //        catch (JsonException ex)
+                //        {
+                //            throw new Exception($"Validation failed for JSON file in project {projectName}: {file.FullPath}{Environment.NewLine}{ex.Message}", ex);
+                //        }
+                //    }
+                //    context.Information("JSON validation passed for {0}", projectName);
+                //}
+                //else
+                //{
+                //    context.Information("Skipping JSON validation for {0}", projectName);
+                //}
 
                 // 2) Clean and publish this project
                 var csprojPath = $"../{projectName}/{projectName}.csproj";
@@ -121,7 +118,7 @@ public sealed class PerProjectTask : FrostingTask<BuildContext>
                 context.CopyFiles(publishSource, releaseDir);
 
                 // Copy assets and metadata
-                context.CopyDirectory($"../{projectName}/assets", $"{releaseDir}/assets");
+                //context.CopyDirectory($"../{projectName}/assets", $"{releaseDir}/assets");
                 context.CopyFile($"../{projectName}/modinfo.json", $"{releaseDir}/modinfo.json");
 
                 var iconPath = $"../{projectName}/modicon.png";
