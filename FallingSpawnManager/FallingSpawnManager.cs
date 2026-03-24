@@ -17,7 +17,7 @@ using Vintagestory.GameContent;
     "fallingspawnmanager",
     Website = "https://github.com/tehtelev/FallingSpawnManager",
     Description = "Limits the number of blocks falling at the same time.",
-    Version = "0.0.1",
+    Version = "0.0.2",
     Authors = new[] { "Tehtelev"}
 )]
 
@@ -38,28 +38,56 @@ namespace FallingSpawnManager
         private static Queue<SpawnRequest> requestQueue = new Queue<SpawnRequest>();
         // Positions that already have a pending request — prevents duplicates
         private static HashSet<BlockPos> pendingPositions = new HashSet<BlockPos>();
-        // Maximum number of concurrently existing EntityBlockFalling instances
-        private static int maxFallingBlocks;
+
         private static ICoreServerAPI sapi;
         // Radius around a player within which entities are created (in blocks)
         private static int activeRange = 128;
-
+        // патчи Harmony
         private Harmony harmony;
-
+        // Конфигурация мода, загружается при старте
+        private FSMConfig? _config;
+        // максимальное число падающих блоков
+        public static int maxFallingLimit;
 
         public override bool ShouldLoad(EnumAppSide forSide)
         {
             return forSide == EnumAppSide.Server;
         }
 
+
+
+
+        /// <summary>
+        /// Загрузка конфигурации и начальная инициализация
+        /// </summary>
+        /// <param name="api"></param>
+        public override void StartPre(ICoreAPI api)
+        {
+            // грузим конфиг
+            // если конфиг с ошибкой или не найден, то генерируется стандартный
+            _config = api.LoadModConfig<FSMConfig>("FallingSpawnManagerConfig.json") ?? new FSMConfig();
+            api.StoreModConfig(_config, "FallingSpawnManagerConfig.json");
+
+            // проверяем, что конфиг валиден, и обрезаются значения
+            maxFallingLimit = Math.Clamp(_config.MaxFallingLimit, 10, 10000);
+
+
+        }
+
+
         public override void Start(ICoreAPI api)
         {
             harmony = new Harmony("fallingspawnmanager");
 
-            // Регистрация всех патчей (лучше вынести в отдельный метод)
+            // Регистрация всех патчей
             RegisterPatches(api);
         }
 
+
+        /// <summary>
+        /// Регистрация всех патчей с помощью Harmony
+        /// </summary>
+        /// <param name="api"></param>
         private void RegisterPatches(ICoreAPI api)
         {
             // EntityBlockFalling.Initialize
@@ -85,14 +113,13 @@ namespace FallingSpawnManager
             else
                 api.Logger.Error("collapseLayer not found");
 
-
+            // BlockBehaviorUnstableFalling.TryFalling
             var tryFallingMethod = AccessTools.Method(typeof(BlockBehaviorUnstableFalling), "TryFalling",
                 new Type[] { typeof(IWorldAccessor), typeof(BlockPos), typeof(EnumHandling).MakeByRefType() });
             if (tryFallingMethod != null)
             {
                 harmony.Patch(tryFallingMethod,
                     prefix: new HarmonyMethod(typeof(BlockBehaviorUnstableFallingPatch), nameof(BlockBehaviorUnstableFallingPatch.TryFalling_Prefix)));
-                //api.Logger.Notification("Patched BlockBehaviorUnstableFalling.TryFalling");
             }
             else
             {
@@ -103,7 +130,6 @@ namespace FallingSpawnManager
         public override void StartServerSide(ICoreServerAPI api)
         {
             sapi = api;
-            maxFallingBlocks = 200; // TODO: move to config!
 
             // Determine entity tracking radius from server settings
             try
@@ -145,8 +171,9 @@ namespace FallingSpawnManager
             SpawnRequest request;
             Block block;
             Entity existing;
+            EntityBlockFalling entityBf;
 
-            while (totalFallingBlocks < maxFallingBlocks && requestQueue.Count > 0)
+            while (totalFallingBlocks < maxFallingLimit && requestQueue.Count > 0)
             {
                 request = requestQueue.Dequeue();
                 pendingPositions.Remove(request.InitialPos);
@@ -164,9 +191,9 @@ namespace FallingSpawnManager
                 if (existing != null)
                 {
                     request.RetryCount++;
-                    if (request.RetryCount >= 10)
+                    if (request.RetryCount >= 300) // ~10 seconds at 32 ms tick interval
                     {
-                        // After 10 failed attempts — give up and drop items
+                        // After 300 failed attempts — give up and drop items
                         var drops = request.Block.GetDrops(sapi.World, request.InitialPos, null);
                         EntityBlockFallingPatch.SpawnDrops(sapi.World, request.InitialPos, drops, request.BlockEntity);
                         continue;
@@ -178,7 +205,7 @@ namespace FallingSpawnManager
                 }
 
                 // Create the entity and apply position offset if specified
-                EntityBlockFalling entityBf = new EntityBlockFalling(
+                entityBf = new EntityBlockFalling(
                     request.Block, request.BlockEntity, request.InitialPos,
                     request.FallSound, request.ImpactDamageMul,
                     request.CanFallSideways, request.DustIntensity)
@@ -261,6 +288,7 @@ namespace FallingSpawnManager
             EntityBlockFallingPatch.SimulateInstantFall(sapi.World, block, be, initialPos, drops, doRemoveBlock);
         }
 
+
         public override void Dispose()
         {
             // On mod unload, clear the queue and unsubscribe from events to avoid holding world object references
@@ -274,7 +302,8 @@ namespace FallingSpawnManager
                 sapi.Event.OnEntityDespawn -= OnEntityDespawn;
             }
 
-            //harmony?.Unpatch();
+            // Unpatch all Harmony patches applied by this mod
+            harmony?.UnpatchAll("fallingspawnmanager");
         }
 
         /// <summary>
@@ -293,5 +322,17 @@ namespace FallingSpawnManager
             public Vec3d PositionOffset;
             public int RetryCount; // How many times this request has been returned to the queue due to a occupied position
         }
+
+
+
+    }
+
+
+    /// <summary>
+    /// Конфигуратор сети
+    /// </summary>
+    public class FSMConfig
+    {
+        public int MaxFallingLimit = 200;
     }
 }
