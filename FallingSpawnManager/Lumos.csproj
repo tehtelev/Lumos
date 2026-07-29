@@ -1,10 +1,10 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
     <PropertyGroup>
-        <TargetFramework>net8.0</TargetFramework>
+        <TargetFramework>net10.0</TargetFramework>
         <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
         <OutputPath>bin\$(Configuration)\Mods\mod</OutputPath>
         <Nullable>enable</Nullable>
-        <RootNamespace>FallingSpawnManager</RootNamespace>
+        <RootNamespace>Lumos</RootNamespace>
     </PropertyGroup>
     <ItemGroup>
         <Reference Include="protobuf-net">
