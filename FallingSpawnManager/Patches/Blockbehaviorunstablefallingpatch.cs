@@ -61,7 +61,7 @@ public static class BlockBehaviorUnstableFallingPatch
             return true;
 
 
-        var fsm = world.Api.ModLoader.GetModSystem<FallingSpawnManager>();
+        var fsm = world.Api.ModLoader.GetModSystem<Lumos>();
         if (fsm == null)
             return true; // если менеджер не загружен, пусть работает оригинал
 

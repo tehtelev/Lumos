@@ -13,10 +13,10 @@ using Vintagestory.GameContent;
 
 [assembly: ModDependency("game", "1.21.6")]
 [assembly: ModInfo(
-    "Falling blocks spawn manager",
-    "fallingspawnmanager",
-    Website = "https://github.com/tehtelev/FallingSpawnManager",
-    Description = "Limits the number of blocks falling at the same time.",
+    "Lumos",
+    "lumos",
+    Website = "https://github.com/tehtelev/Lumos",
+    Description = "Reworking the game's lighting system and fixing related bugs",
     Version = "0.0.2",
     Authors = new[] { "Tehtelev"}
 )]
@@ -30,7 +30,7 @@ namespace FallingSpawnManager
     /// Limits the number of concurrently existing EntityBlockFalling instances,
     /// queues spawn requests, and performs instant simulation for blocks outside player range.
     /// </summary>
-    public class FallingSpawnManager : ModSystem
+    public class Lumos : ModSystem
     {
         // Total number of loaded EntityBlockFalling instances on the server
         private static int totalFallingBlocks = 0;

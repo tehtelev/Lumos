@@ -26,8 +26,9 @@ public static class Program
 
 public class BuildContext : FrostingContext
 {
-    public List<string> ProjectNames = new List<string> {
-        "FallingSpawnManager"
+    public List<string> ProjectNames = new()
+    {
+        "Lumos"
         // Add other project names here
     };
 

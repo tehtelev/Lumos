@@ -51,7 +51,7 @@ public static class BlockBehaviorUnstableRockPatch
     {
 
 
-        FallingSpawnManager fsm = world.Api.ModLoader.GetModSystem<FallingSpawnManager>();
+        Lumos fsm = world.Api.ModLoader.GetModSystem<Lumos>();
 
         AssetLocation fallSound = _fallSoundRef(__instance);
         float impactDamageMul = _impactDamageMulRef(__instance);

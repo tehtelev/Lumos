@@ -1,7 +1,7 @@
-# Falling blocks spawn manager
+﻿# Lumos
 
-This mod limits the number of unstable rock, soil, gravel, and sand blocks falling simultaneously when collapses are enabled.
+Reworking the game's lighting system and fixing related bugs
 
 ## About
 
-Falling blocks spawn manager is a Mod for the game [VintageStory](https://www.vintagestory.at/).
+Lumos is a Mod for the game [VintageStory](https://www.vintagestory.at/).
