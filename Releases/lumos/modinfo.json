@@ -1,0 +1,13 @@
+﻿{
+  "type": "code",
+  "modid": "lumos",
+  "name": "Lumos",
+  "authors": [
+    "Tehtelev"
+  ],
+  "description": "Reworking the game's lighting system and fixing related bugs",
+  "Version": "0.0.2",
+  "dependencies": {
+    "game": "1.22.0"
+  }
+}

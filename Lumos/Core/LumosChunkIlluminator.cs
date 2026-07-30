@@ -647,14 +647,66 @@ public class LumosChunkIlluminator
         FastSetOfLongs fastSetOfLongs = new FastSetOfLongs();
         IWorldChunk chunkAtPos = GetChunkAtPos(posX, posY, posZ);
         if (chunkAtPos == null) return fastSetOfLongs;
+
         chunkAtPos.LightPositions.Remove(InChunkIndex(posX, posY, posZ));
+
         int num = oldLightHsv[2];
         if (num == 18) num = 20;
         int rangeNext = num - chunkAtPos.GetLightAbsorptionAt(InChunkIndex(posX, posY, posZ), tmpPos.Set(posX, posY, posZ), blockTypes) - 1;
-        SpreadDarkness(rangeNext, posX, posY, posZ, fastSetOfLongs);
+
+        // 🟢 ЗАМЕНА: Сферическая очистка вместо манхэттенского BFS
+        ClearLightSpherical(rangeNext, posX, posY, posZ, fastSetOfLongs);
+
         UpdateLightAt(num, posX, posY, posZ, fastSetOfLongs);
         return fastSetOfLongs;
     }
+
+    /// <summary> Очистка света по сфере, совпадающей с формой излучения рейтрейсера </summary>
+    private void ClearLightSpherical(int range, int centerX, int centerY, int centerZ, FastSetOfLongs touchedChunks)
+    {
+        if (range <= 0) return;
+
+        int num = chunkSize;
+        int rangeSq = range * range;
+
+        // Оптимизированная граница: перебираем только ограничивающий куб сферы
+        int minX = Math.Max(0, centerX - range);
+        int maxX = Math.Min(mapsizex - 1, centerX + range);
+        int minY = Math.Max(0, centerY - range);
+        int maxY = Math.Min(mapsizey - 1, centerY + range);
+        int minZ = Math.Max(0, centerZ - range);
+        int maxZ = Math.Min(mapsizez - 1, centerZ + range);
+
+        for (int x = minX; x <= maxX; x++)
+        {
+            int dx = x - centerX;
+            int dxSq = dx * dx;
+            for (int y = minY; y <= maxY; y++)
+            {
+                int dy = y - centerY;
+                int dySq = dy * dy;
+                if (dxSq + dySq > rangeSq) continue;
+
+                for (int z = minZ; z <= maxZ; z++)
+                {
+                    int dz = z - centerZ;
+                    if (dxSq + dySq + dz * dz > rangeSq) continue; // 🟢 Евклидова проверка
+
+                    IWorldChunk chunk = chunkProvider.GetUnpackedChunkFast(x / num, y / num, z / num);
+                    if (chunk != null)
+                    {
+                        int idx = (y % num * num + z % num) * num + x % num;
+                        if (chunk.Lighting.GetBlocklight(idx) > 0)
+                        {
+                            chunk.Lighting.SetBlocklight(idx, 0);
+                            touchedChunks.Add(chunkProvider.ChunkIndex3D(x / num, y / num, z / num));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
 
     public FastSetOfLongs UpdateBlockLight(int oldLightAbsorb, int newLightAbsorb, int posX, int posY, int posZ)
     {
@@ -667,14 +719,20 @@ public class LumosChunkIlluminator
         int blocklight = unpackedChunkFast.Lighting.GetBlocklight(index3d);
 
         if (oldLightAbsorb == newLightAbsorb) return fastSetOfLongs;
-        if (blocklight == 0) return fastSetOfLongs;
 
-        if (newLightAbsorb > oldLightAbsorb)
+        // ИСПРАВЛЕНИЕ 1: Распространяем "тьму" только если здесь был свет
+        if (newLightAbsorb > oldLightAbsorb && blocklight > 0)
         {
             int rangeNext = blocklight - oldLightAbsorb - 1;
             SpreadDarkness(rangeNext, posX, posY, posZ, fastSetOfLongs);
         }
-        UpdateLightAt(blocklight, posX, posY, posZ, fastSetOfLongs);
+
+        // ИСПРАВЛЕНИЕ 2: Используем больший range, чтобы гарантированно захватить
+        // все nearby источники света, даже если они далеко от этой позиции.
+        // 32 = размер чанка, этого достаточно для 3x3x3 чанков вокруг точки.
+        int effectiveRange = Math.Max(blocklight, 32);
+        UpdateLightAt(effectiveRange, posX, posY, posZ, fastSetOfLongs);
+
         return fastSetOfLongs;
     }
 
@@ -805,12 +863,19 @@ public class LumosChunkIlluminator
         int num2 = posY / chunkSize;
         int num3 = posZ / chunkSize;
 
+        // Адаптивный радиус поиска в чанках.
+        // range = яркость удалённого источника.
+        // +32 = максимальная яркость nearby источника (31) + запас.
+        // Ceiling division гарантирует покрытие в худшем случае
+        // (когда точка в конце чанка и покрытие в одну сторону минимально).
+        int searchChunks = (range + 32 + chunkSize - 1) / chunkSize;
+
         IWorldChunk chunk;
-        for (int i = -1; i <= 1; i++)
+        for (int i = -searchChunks; i <= searchChunks; i++)
         {
-            for (int j = -1; j <= 1; j++)
+            for (int j = -searchChunks; j <= searchChunks; j++)
             {
-                for (int k = -1; k <= 1; k++)
+                for (int k = -searchChunks; k <= searchChunks; k++)
                 {
                     chunk = chunkProvider.GetChunk(num + i, num2 + j, num3 + k);
                     if (chunk == null) continue;
@@ -821,12 +886,23 @@ public class LumosChunkIlluminator
                         int num4 = (num2 + j) * chunkSize + lightPosition / (YPlus);
                         int num5 = (num3 + k) * chunkSize + lightPosition / chunkSize % chunkSize;
                         int num6 = (num + i) * chunkSize + lightPosition % chunkSize;
-                        int num7 = Math.Abs(posX - num6) + Math.Abs(posY - num4) + Math.Abs(posZ - num5);
+
+                        // 🔴 БЫЛО: Манхэттенское расстояние (куб)
+                        // int num7 = Math.Abs(posX - num6) + Math.Abs(posY - num4) + Math.Abs(posZ - num5);
+
+                        // 🟢 СТАЛО: Евклидово расстояние (сфера)
+                        float dx = posX - num6;
+                        float dy = posY - num4;
+                        float dz = posZ - num5;
+                        float distSq = dx * dx + dy * dy + dz * dz;
 
                         Block block = blockTypes[chunk.Data[lightPosition]];
                         byte[] hsv = block.GetLightHsv(readBlockAccess, tmpPos.Set(num6, num4, num5));
 
-                        if (hsv[2] + range > num7)
+                        // Проверяем, попадает ли источник в сферу влияния (радиус = яркость + range)
+                        float maxDistSq = (hsv[2] + range) * (hsv[2] + range);
+
+                        if (distSq <= maxDistSq)
                         {
                             if (nearbyCount < nearbyLightSourcesArray.Length)
                             {
