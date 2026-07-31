@@ -25,12 +25,7 @@ namespace Lumos.Core;
 // Not thread-safe: Shared arrays require separate instances per thread
 public class LumosChunkIlluminator
 {
-    // Максимальный размер bounding box кластера по каждой оси.
-    // Грид покрывает ±64 от центра. Крайний источник на расстоянии bbox/2.
-    // Свет распространяется ещё на MAX_LIGHT_RADIUS блоков.
-    // bbox/2 + MAX_LIGHT_RADIUS <= LIGHT_GRID_HALF
-    // bbox <= 2 * (64 - 32) = 64
-    private const int MAX_CLUSTER_SPAN = LIGHT_GRID_HALF; // 64
+
 
     // Unified block-light dirty batching.
     // Individual light changes only enqueue dirty regions.
@@ -268,9 +263,9 @@ public class LumosChunkIlluminator
 
 
     #region Generational Grid for Light Tracking
-    private const int LIGHT_GRID_WIDTH = 128;
-    private const int LIGHT_GRID_HALF = 64;
-    private const int LIGHT_GRID_SIZE = LIGHT_GRID_WIDTH * LIGHT_GRID_WIDTH * LIGHT_GRID_WIDTH;
+
+
+
 
     private struct LightCell
     {
@@ -328,8 +323,8 @@ public class LumosChunkIlluminator
 
     private const int MAX_RAY_POOL_SIZE = 200000;
     private const int REFLECTION_RAYS_COUNT = 128;
-    private const int DIRECT_RAYS_COUNT = 15440;      // базовое значение, используется как fallback / для радиуса ~23
-    private const float TARGET_GAP = 0.9f;             // желаемый зазор между лучами на поверхности сферы, в блоках
+
+    private const float TARGET_GAP = 1.3f;             // желаемый зазор между лучами на поверхности сферы, в блоках
     private const int MIN_RAYS = 512;                  // нижний предел, чтобы слабые источники не были совсем "дырявыми"
     private const int MAX_RAYS = 40000;                // верхний предел, страховка от чрезмерной нагрузки
     private const int RADIUS_BUCKET_STEP = 2;          // шаг квантования радиуса для кэша (округление вверх)
@@ -337,6 +332,7 @@ public class LumosChunkIlluminator
     // Кэш: bucketedRadius -> (массив направлений, фактическое количество точек)
     private static ConcurrentDictionary<int, (float[][] dirs, int count)> sphereCache =
         new ConcurrentDictionary<int, (float[][], int)>();
+
     private float[][] fibonacciSphere;
 
     private void InitRayTracing()
@@ -353,7 +349,7 @@ public class LumosChunkIlluminator
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private int CalcRayCountForRadius(int radius)
+    private static int CalcRayCountForRadius(int radius)
     {
         if (radius <= 0) return MIN_RAYS;
         // N = 24 * R² / gap²,  выведено из gap(R) = 2R * sqrt(6/N)
@@ -363,13 +359,13 @@ public class LumosChunkIlluminator
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private int BucketRadius(int radius)
+    private static int BucketRadius(int radius)
     {
         // Квантуем радиус, чтобы близкие по яркости источники переиспользовали одну и ту же сферу
         return ((radius + RADIUS_BUCKET_STEP - 1) / RADIUS_BUCKET_STEP) * RADIUS_BUCKET_STEP;
     }
 
-    private (float[][] dirs, int count) GetOrBuildSphereForRadius(int radius)
+    private static (float[][] dirs, int count) GetOrBuildSphereForRadius(int radius)
     {
         int bucket = BucketRadius(radius);
         if (sphereCache.TryGetValue(bucket, out var cached))
@@ -382,7 +378,7 @@ public class LumosChunkIlluminator
         return entry;
     }
 
-    private float[][] GenerateFibonacciSphere(int count, out int actualCount)
+    private static float[][] GenerateFibonacciSphere(int count, out int actualCount)
     {
         var points = new float[count][];
         float goldenAngle = (float)(Math.PI * (3.0 - Math.Sqrt(5.0)));
@@ -501,7 +497,7 @@ public class LumosChunkIlluminator
         }
     }
 
-    private int GetReflectivity(Block block)
+    private static int GetReflectivity(Block block)
     {
         // Стекло: прозрачное, отражение слабое, луч идёт дальше.
         // 10–15 % даёт видимый блик, не перетягивая внимание.
@@ -522,7 +518,7 @@ public class LumosChunkIlluminator
         return 50;
     }
 
-    private void ProcessRay(LightRay ray, int maxRadius)
+    private void ProcessRay(LightRay ray)
     {
         float posX = ray.OriginX;
         float posY = ray.OriginY;
@@ -605,12 +601,6 @@ public class LumosChunkIlluminator
             Block block = blockTypes[chunk.Data[index3d]];
             tmpPos.Set(x, y, z);
 
-            if (block.Code.Path.ToString().Contains("slab"))
-            {
-                energy = energy + 1;
-                energy--;
-            }
-
             int baseAbsorption = chunk.GetLightAbsorptionAt(index3d, tmpPos, blockTypes);
 
             energy -= stepDistance;
@@ -639,7 +629,7 @@ public class LumosChunkIlluminator
 
             // ── 7. Свет в прозрачные блоки ──
             if (energy > 0 && (!isOpaque || solidMask == 63)) // чтобы листва не темнела у полных блоков
-                ApplyLightToBlock(x, y, z, energy, ray.H, ray.S, ray.B, ray.SourceId);
+                ApplyLightToBlock(x, y, z, energy, ray.SourceId);
 
             // ── 8. Отражение ──
             if (ray.BounceCount == 0 && effectiveAbs > 0)
@@ -671,7 +661,7 @@ public class LumosChunkIlluminator
         }
     }
 
-    private void ApplyLightToBlock(int x, int y, int z, float energy, byte h, byte s, byte b, int sourceId)
+    private void ApplyLightToBlock(int x, int y, int z, float energy, int sourceId)
     {
         int lightLevel = (int)energy;
         if (lightLevel <= 0) return;
@@ -709,9 +699,6 @@ public class LumosChunkIlluminator
                 source.posY,
                 source.posZ,
                 brightness,
-                h,
-                s,
-                brightness,
                 srcIdx
             );
 
@@ -748,7 +735,7 @@ public class LumosChunkIlluminator
             while (activeRayCount > 0)
             {
                 LightRay ray = DequeueRay();
-                ProcessRay(ray, brightness);
+                ProcessRay(ray);
             }
         }
     }
@@ -868,51 +855,7 @@ public class LumosChunkIlluminator
         return result;
     }
 
-    /// <summary> Очистка света по сфере, совпадающей с формой излучения рейтрейсера </summary>
-    private void ClearLightSpherical(int range, int centerX, int centerY, int centerZ, FastSetOfLongs touchedChunks)
-    {
-        if (range <= 0) return;
-
-        int num = chunkSize;
-        int rangeSq = range * range;
-
-        // Оптимизированная граница: перебираем только ограничивающий куб сферы
-        int minX = Math.Max(0, centerX - range);
-        int maxX = Math.Min(mapsizex - 1, centerX + range);
-        int minY = Math.Max(0, centerY - range);
-        int maxY = Math.Min(mapsizey - 1, centerY + range);
-        int minZ = Math.Max(0, centerZ - range);
-        int maxZ = Math.Min(mapsizez - 1, centerZ + range);
-
-        for (int x = minX; x <= maxX; x++)
-        {
-            int dx = x - centerX;
-            int dxSq = dx * dx;
-            for (int y = minY; y <= maxY; y++)
-            {
-                int dy = y - centerY;
-                int dySq = dy * dy;
-                if (dxSq + dySq > rangeSq) continue;
-
-                for (int z = minZ; z <= maxZ; z++)
-                {
-                    int dz = z - centerZ;
-                    if (dxSq + dySq + dz * dz > rangeSq) continue; // 🟢 Евклидова проверка
-
-                    IWorldChunk chunk = chunkProvider.GetUnpackedChunkFast(x / num, y / num, z / num);
-                    if (chunk != null)
-                    {
-                        int idx = (y % num * num + z % num) * num + x % num;
-                        if (chunk.Lighting.GetBlocklight(idx) > 0)
-                        {
-                            chunk.Lighting.SetBlocklight(idx, 0);
-                            touchedChunks.Add(chunkProvider.ChunkIndex3D(x / num, y / num, z / num));
-                        }
-                    }
-                }
-            }
-        }
-    }
+    
 
 
     public FastSetOfLongs UpdateBlockLight(
@@ -970,32 +913,8 @@ public class LumosChunkIlluminator
         }
     }
 
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static void IndexToCoords(int idx, out int lx, out int ly, out int lz)
-    {
-        lx = idx & GRID_MASK;
-        ly = (idx >> GRID_BITS) & GRID_MASK;
-        lz = idx >> (GRID_BITS * 2);
-    }
 
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static ref int SrcSlot(ref LightCell c, int i)
-    {
-        switch (i) { case 0: return ref c.src0; case 1: return ref c.src1; case 2: return ref c.src2; default: return ref c.src3; }
-    }
 
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static ref byte LvlSlot(ref LightCell c, int i)
-    {
-        switch (i) { case 0: return ref c.lvl0; case 1: return ref c.lvl1; case 2: return ref c.lvl2; default: return ref c.lvl3; }
-    }
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static int FindSlot(ref LightCell c, int srcIdx)
-    {
-        for (int i = 0; i < c.trackedCount; i++) if (SrcSlot(ref c, i) == srcIdx) return i;
-        return -1;
-    }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private float GetEffectiveAbsorption(
@@ -1058,11 +977,6 @@ public class LumosChunkIlluminator
         return (posY % chunkSize * chunkSize + posZ % chunkSize) * chunkSize + posX % chunkSize;
     }
 
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal long GetChunkIndexForPos(int posX, int posY, int posZ)
-    {
-        return chunkProvider.ChunkIndex3D(posX / chunkSize, posY / chunkSize, posZ / chunkSize);
-    }
 
     private void LoadSourcesIntersectingDirtySpheres(
         List<DirtyLightSphere> spheres)
