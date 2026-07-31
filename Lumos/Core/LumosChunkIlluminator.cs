@@ -1233,42 +1233,21 @@ public class LumosChunkIlluminator
         return true;
     }
 
-    private void RecalcBlockLightAtPos(
-        int posX,
-        int posY,
-        int posZ,
-        LightSourcesAtBlock lsab,
-        Dictionary<long, IWorldChunk> modifiedChunks)
+    /// <summary>
+    /// Calculates the packed block-light value from all source contributions
+    /// accumulated in the staging dictionary for one block.
+    ///
+    /// This method does not touch chunk.Lighting. It is intentionally pure with
+    /// respect to the current light state, so the expensive ray-tracing phase
+    /// can finish while the world still displays the previous valid lighting.
+    /// </summary>
+    private int CalculatePackedLight(
+        LightSourcesAtBlock lsab)
     {
-        int num = chunkSize;
-
-        IWorldChunk chunk =
-            chunkProvider.GetUnpackedChunkFast(
-                posX / num,
-                posY / num,
-                posZ / num,
-                notRecentlyAccessed: true
-            );
-
-        if (chunk == null)
-            return;
-
-        int index3d =
-            (posY % num * num + posZ % num) * num +
-            posX % num;
-
         int lightCount = lsab.count;
 
         if (lightCount <= 0)
-        {
-            chunk.Lighting.SetBlocklight(index3d, 0);
-
-            long chunkKey = chunkProvider.ChunkIndex3D(
-                posX / num, posY / num, posZ / num);
-
-            modifiedChunks.TryAdd(chunkKey, chunk);
-            return;
-        }
+            return 0;
 
         float totalWeight = 0f;
         int maxLevel = 0;
@@ -1284,19 +1263,8 @@ public class LumosChunkIlluminator
         }
 
         if (maxLevel <= 0 || totalWeight <= 0f)
-        {
-            chunk.Lighting.SetBlocklight(index3d, 0);
+            return 0;
 
-            long chunkKey = chunkProvider.ChunkIndex3D(
-                posX / num, posY / num, posZ / num);
-
-            modifiedChunks.TryAdd(chunkKey, chunk);
-            return;
-        }
-
-        // The dirty region was cleared immediately before tracing.
-        // We therefore always write the complete result from all sources
-        // that can affect this position. No stale-light protection is needed.
         float r = 0.5f;
         float g = 0.5f;
         float b = 0.5f;
@@ -1337,23 +1305,94 @@ public class LumosChunkIlluminator
             ColorUtil.SatQuantities - 1
         );
 
-        int packedLight =
+        return
             (maxLevel << 5) |
             (mixedHue << 10) |
             (mixedSaturation << 16);
+    }
 
-        chunk.Lighting.SetBlocklight(
-            index3d,
-            packedLight
-        );
+    /// <summary>
+    /// Commits the fully calculated staging result into chunk.Lighting.
+    ///
+    /// IMPORTANT:
+    /// This is the only method in the normal batched block-light path that
+    /// writes the new BlockLight values into the live world state.
+    ///
+    /// Until this method runs, the old valid lighting remains visible and
+    /// untouched while ray tracing is still in progress.
+    ///
+    /// Blocks that are part of the dirty region but absent from visitedNodes
+    /// receive zero light. This is what correctly handles source removal.
+    /// </summary>
+    private void CommitDirtyLightCells(
+        FastSetOfLongs touchedChunks,
+        Dictionary<long, IWorldChunk> modifiedChunks)
+    {
+        int num = chunkSize;
 
-        long modifiedChunkKey = chunkProvider.ChunkIndex3D(
-            posX / num, posY / num, posZ / num);
+        foreach (long key in dirtyLightCells)
+        {
+            UnpackPos(
+                key,
+                out int x,
+                out int y,
+                out int z
+            );
 
-        modifiedChunks.TryAdd(
-            modifiedChunkKey,
-            chunk
-        );
+            IWorldChunk chunk =
+                chunkProvider.GetUnpackedChunkFast(
+                    x / num,
+                    y / num,
+                    z / num,
+                    notRecentlyAccessed: true
+                );
+
+            if (chunk == null)
+                continue;
+
+            int index3d =
+                (y % num * num + z % num) * num +
+                x % num;
+
+            // No contribution in the new staging result means the light
+            // must disappear from this dirty cell.
+            int newLight = 0;
+
+            if (visitedNodes.TryGetValue(
+                key,
+                out LightSourcesAtBlock lsab))
+            {
+                newLight = CalculatePackedLight(lsab);
+            }
+
+            int oldLight =
+                chunk.Lighting.GetBlocklight(index3d);
+
+            // Avoid unnecessary Lighting writes and chunk invalidation.
+            if (oldLight == newLight)
+                continue;
+
+            chunk.Lighting.SetBlocklight(
+                index3d,
+                newLight
+            );
+
+            long chunkKey =
+                chunkProvider.ChunkIndex3D(
+                    x / num,
+                    y / num,
+                    z / num
+                );
+
+            touchedChunks.Add(
+                chunkKey
+            );
+
+            modifiedChunks.TryAdd(
+                chunkKey,
+                chunk
+            );
+        }
     }
 
     private void BuildDirtyLightCellSet(
@@ -1405,47 +1444,25 @@ public class LumosChunkIlluminator
         }
     }
 
-    private void ClearDirtyLightCells(
-        FastSetOfLongs touchedChunks,
-        Dictionary<long, IWorldChunk> modifiedChunks)
-    {
-        int num = chunkSize;
-
-        foreach (long key in dirtyLightCells)
-        {
-            UnpackPos(key, out int x, out int y, out int z);
-
-            IWorldChunk chunk =
-                chunkProvider.GetUnpackedChunkFast(
-                    x / num,
-                    y / num,
-                    z / num,
-                    notRecentlyAccessed: true
-                );
-
-            if (chunk == null)
-                continue;
-
-            int index3d =
-                (y % num * num + z % num) * num +
-                x % num;
-
-            if (chunk.Lighting.GetBlocklight(index3d) == 0)
-                continue;
-
-            chunk.Lighting.SetBlocklight(index3d, 0);
-
-            long chunkKey = chunkProvider.ChunkIndex3D(
-                x / num, y / num, z / num);
-
-            touchedChunks.Add(chunkKey);
-            modifiedChunks.TryAdd(chunkKey, chunk);
-        }
-    }
-
+    /// <summary>
+    /// Calculates and commits one complete block-light batch.
+    ///
+    /// Pipeline:
+    ///
+    /// 1. Detach pending dirty spheres.
+    /// 2. Build the exact dirty-cell union.
+    /// 3. Find every source that can affect that region.
+    /// 4. Trace all relevant sources into visitedNodes (staging).
+    /// 5. Commit the new result to chunk.Lighting in one short pass.
+    ///
+    /// The live Lighting arrays are NOT cleared before tracing. Therefore the
+    /// player continues to see the previous valid lighting while the expensive
+    /// ray-tracing stage is running.
+    /// </summary>
     public FastSetOfLongs FlushPendingBlockLightUpdates()
     {
-        FastSetOfLongs touchedChunks = new FastSetOfLongs();
+        FastSetOfLongs touchedChunks =
+            new FastSetOfLongs();
 
         if (isFlushingBlockLight ||
             pendingDirtySpheres.Count == 0)
@@ -1462,15 +1479,22 @@ public class LumosChunkIlluminator
         {
             dirtySphereBuffer.Clear();
 
-            foreach (DirtyLightSphere sphere in pendingDirtySpheres.Values)
+            foreach (
+                DirtyLightSphere sphere
+                in pendingDirtySpheres.Values)
             {
                 dirtySphereBuffer.Add(sphere);
             }
 
             // Detach the current batch before calculating it.
-            // New changes arriving during the calculation stay queued for the next flush.
+            // Changes arriving during this calculation remain queued for the
+            // next flush instead of being lost or recursively merged here.
             pendingDirtySpheres.Clear();
 
+            // -------------------------------------------------------------
+            // 1. Build the exact union of all dirty spheres.
+            //    No live Lighting data is changed here.
+            // -------------------------------------------------------------
             BuildDirtyLightCellSet(
                 dirtySphereBuffer
             );
@@ -1478,53 +1502,36 @@ public class LumosChunkIlluminator
             if (dirtyLightCells.Count == 0)
                 return touchedChunks;
 
+            // -------------------------------------------------------------
+            // 2. Find all active sources whose light spheres can affect
+            //    at least one dirty cell.
+            // -------------------------------------------------------------
             LoadSourcesIntersectingDirtySpheres(
                 dirtySphereBuffer
             );
 
-            // 1. Clear the old light in the entire dirty region.
-            ClearDirtyLightCells(
+            // -------------------------------------------------------------
+            // 3. Expensive stage: calculate the NEW lighting into the
+            //    staging dictionary visitedNodes.
+            //
+            //    IMPORTANT: chunk.Lighting is still untouched here.
+            // -------------------------------------------------------------
+            TraceNearbyBlockLights();
+
+            // -------------------------------------------------------------
+            // 4. Fast stage: atomically-ish commit the complete result.
+            //    Missing visitedNodes entries become zero light.
+            // -------------------------------------------------------------
+            CommitDirtyLightCells(
                 touchedChunks,
                 modifiedChunks
             );
 
-            // 2. Trace each relevant source exactly once.
-            TraceNearbyBlockLights();
-
-            // 3. Write only inside the dirty region.
-            foreach (KeyValuePair<long, LightSourcesAtBlock> pair
-                     in visitedNodes)
-            {
-                long positionKey = pair.Key;
-
-                if (!dirtyLightCells.Contains(positionKey))
-                    continue;
-
-                UnpackPos(
-                    positionKey,
-                    out int x,
-                    out int y,
-                    out int z
-                );
-
-                RecalcBlockLightAtPos(
-                    x,
-                    y,
-                    z,
-                    pair.Value,
-                    modifiedChunks
-                );
-
-                touchedChunks.Add(
-                    chunkProvider.ChunkIndex3D(
-                        x / chunkSize,
-                        y / chunkSize,
-                        z / chunkSize
-                    )
-                );
-            }
-
-            foreach (IWorldChunk chunk in modifiedChunks.Values)
+            // Mark each modified chunk once, after all of its changed cells
+            // have been committed.
+            foreach (
+                IWorldChunk chunk
+                in modifiedChunks.Values)
             {
                 chunk.MarkModified();
             }
