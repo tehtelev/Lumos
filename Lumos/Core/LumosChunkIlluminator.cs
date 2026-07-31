@@ -9,6 +9,7 @@ using Vintagestory.API.MathTools;
 using Vintagestory.API.Server;
 using Vintagestory.GameContent;
 
+
 namespace Lumos.Core;
 
 // Stratum start:
@@ -24,8 +25,51 @@ namespace Lumos.Core;
 // Not thread-safe: Shared arrays require separate instances per thread
 public class LumosChunkIlluminator
 {
-    // ВРЕМЕННО: свет проникает в непрозрачные блоки для отладки листвы
-    private const bool DEBUG_LIGHT_PENETRATION = true;
+    // Максимальный размер bounding box кластера по каждой оси.
+    // Грид покрывает ±64 от центра. Крайний источник на расстоянии bbox/2.
+    // Свет распространяется ещё на MAX_LIGHT_RADIUS блоков.
+    // bbox/2 + MAX_LIGHT_RADIUS <= LIGHT_GRID_HALF
+    // bbox <= 2 * (64 - 32) = 64
+    private const int MAX_CLUSTER_SPAN = LIGHT_GRID_HALF; // 64
+
+    // Unified block-light dirty batching.
+    // Individual light changes only enqueue dirty regions.
+    // One FlushPendingBlockLightUpdates() recalculates the complete batch.
+    private const int MAX_BLOCK_LIGHT_LEVEL = 31;
+    private const int DIRTY_RADIUS_PADDING = 1;
+
+    private struct DirtyLightSphere
+    {
+        public int X;
+        public int Y;
+        public int Z;
+        public int Radius;
+
+        public DirtyLightSphere(int x, int y, int z, int radius)
+        {
+            X = x;
+            Y = y;
+            Z = z;
+            Radius = radius;
+        }
+    }
+
+    // One entry per changed source position within the current batch.
+    private readonly Dictionary<long, DirtyLightSphere> pendingDirtySpheres =
+        new Dictionary<long, DirtyLightSphere>(256);
+
+    private readonly List<DirtyLightSphere> dirtySphereBuffer =
+        new List<DirtyLightSphere>(256);
+
+    // Exact union of all dirty spheres.
+    private readonly HashSet<long> dirtyLightCells =
+        new HashSet<long>();
+
+    // Unique source-id mapping for the current trace batch.
+    private readonly Dictionary<long, int> nearbySourceIndexByPosition =
+        new Dictionary<long, int>(512);
+
+    private bool isFlushingBlockLight;
 
     private ushort defaultSunLight;
 
@@ -77,6 +121,151 @@ public class LumosChunkIlluminator
         return new QueueOfInt();
     }
     #endregion
+
+
+    #region Dictionary-based light tracking (replaces 128³ grid)
+
+    /// <summary>
+    /// Хранит вклад каждого источника в данную ячейку.
+    /// Динамический список — нет ограничения на 4 источника.
+    /// </summary>
+    private class LightSourcesAtBlock
+    {
+        public int[] srcIds;
+        public byte[] levels;
+        public int count;
+
+        public LightSourcesAtBlock()
+        {
+            srcIds = new int[4];
+            levels = new byte[4];
+            count = 0;
+        }
+
+        public void Reset()
+        {
+            count = 0;
+        }
+
+        public void AddOrUpdate(int srcId, byte level)
+        {
+            for (int i = 0; i < count; i++)
+            {
+                if (srcIds[i] == srcId)
+                {
+                    if (level > levels[i]) levels[i] = level;
+                    return;
+                }
+            }
+
+            if (count >= srcIds.Length)
+            {
+                int newLen = srcIds.Length * 2;
+                Array.Resize(ref srcIds, newLen);
+                Array.Resize(ref levels, newLen);
+            }
+
+            srcIds[count] = srcId;
+            levels[count] = level;
+            count++;
+        }
+    }
+
+    private void QueueDirtyLightSphere(
+        int posX,
+        int posY,
+        int posZ,
+        int lightRadius)
+    {
+        if (lightRadius <= 0)
+            return;
+
+        int radius =
+            lightRadius + DIRTY_RADIUS_PADDING;
+
+        long key =
+            PackPos(posX, posY, posZ);
+
+        if (pendingDirtySpheres.TryGetValue(
+            key,
+            out DirtyLightSphere existing))
+        {
+            if (radius > existing.Radius)
+            {
+                existing.Radius = radius;
+                pendingDirtySpheres[key] = existing;
+            }
+
+            return;
+        }
+
+        pendingDirtySpheres.Add(
+            key,
+            new DirtyLightSphere(
+                posX,
+                posY,
+                posZ,
+                radius
+            )
+        );
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static void UnpackPos(
+        long key,
+        out int x,
+        out int y,
+        out int z)
+    {
+        x = (int)(key & 0x1FFFFF);
+        y = (int)((key >> 21) & 0x1FFFFF);
+        z = (int)((key >> 42) & 0x1FFFFF);
+
+        if ((x & 0x100000) != 0)
+            x |= unchecked((int)0xFFE00000);
+
+        if ((y & 0x100000) != 0)
+            y |= unchecked((int)0xFFE00000);
+
+        if ((z & 0x100000) != 0)
+            z |= unchecked((int)0xFFE00000);
+    }
+
+    private Dictionary<long, LightSourcesAtBlock> visitedNodes = new Dictionary<long, LightSourcesAtBlock>(4096);
+    private Stack<LightSourcesAtBlock> lsabPool = new Stack<LightSourcesAtBlock>(256);
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static long PackPos(int x, int y, int z)
+    {
+        // 21 бит на координату: диапазон [-1048576, 1048575]
+        return ((long)(x & 0x1FFFFF)) | ((long)(y & 0x1FFFFF) << 21) | ((long)(z & 0x1FFFFF) << 42);
+    }
+
+    private LightSourcesAtBlock GetOrCreateLsab(long key)
+    {
+        if (visitedNodes.TryGetValue(key, out var lsab))
+            return lsab;
+
+        lsab = lsabPool.Count > 0 ? lsabPool.Pop() : new LightSourcesAtBlock();
+        lsab.Reset();
+        visitedNodes[key] = lsab;
+        return lsab;
+    }
+
+    private void RecycleVisitedNodes()
+    {
+        foreach (var kvp in visitedNodes)
+        {
+            kvp.Value.Reset();
+            if (lsabPool.Count < 512)
+                lsabPool.Push(kvp.Value);
+        }
+        visitedNodes.Clear();
+    }
+
+    #endregion
+
+
 
     #region Generational Grid for Light Tracking
     private const int LIGHT_GRID_WIDTH = 128;
@@ -487,100 +676,80 @@ public class LumosChunkIlluminator
         int lightLevel = (int)energy;
         if (lightLevel <= 0) return;
 
-        // ИСПРАВЛЕНИЕ: Вычитаем базу, а не добавляем!
-        int lx = x - baseX;
-        int ly = y - baseY;
-        int lz = z - baseZ;
-
-        // Проверяем границы грида
-        if (lx < 0 || lx >= LIGHT_GRID_WIDTH || ly < 0 || ly >= LIGHT_GRID_WIDTH || lz < 0 || lz >= LIGHT_GRID_WIDTH)
-            return;
-
-        int idx = lx + ly * LIGHT_GRID_WIDTH + lz * (LIGHT_GRID_WIDTH * LIGHT_GRID_WIDTH);
-        ref var cell = ref lightGrid[idx];
-
-        if (cell.generation != iteration)
-        {
-            cell.generation = iteration;
-            cell.maxLevel = 0;
-            cell.trackedCount = 0;
-            touchedCells.Add(idx);
-        }
-
-        if (lightLevel > cell.maxLevel)
-            cell.maxLevel = (byte)lightLevel;
-
-        int slotIdx = FindSlot(ref cell, sourceId);
-        if (slotIdx != -1)
-        {
-            if (lightLevel > LvlSlot(ref cell, slotIdx))
-                LvlSlot(ref cell, slotIdx) = (byte)lightLevel;
-        }
-        else if (cell.trackedCount < 4)
-        {
-            SrcSlot(ref cell, cell.trackedCount) = sourceId;
-            LvlSlot(ref cell, cell.trackedCount) = (byte)lightLevel;
-            cell.trackedCount++;
-        }
-        else
-        {
-            int minLvl = 255;
-            int minSlot = -1;
-            for (int i = 0; i < 4; i++)
-            {
-                int currentLvl = LvlSlot(ref cell, i);
-                if (currentLvl < minLvl)
-                {
-                    minLvl = currentLvl;
-                    minSlot = i;
-                }
-            }
-            if (lightLevel > minLvl)
-            {
-                SrcSlot(ref cell, minSlot) = sourceId;
-                LvlSlot(ref cell, minSlot) = (byte)lightLevel;
-            }
-        }
+        long key = PackPos(x, y, z);
+        var lsab = GetOrCreateLsab(key);
+        lsab.AddOrUpdate(sourceId, (byte)lightLevel);
     }
 
     private int baseX, baseY, baseZ;  // Добавляем поля класса для хранения базы
 
-    private void TraceBlockLight(int centerX, int centerY, int centerZ, int range)
+    private void TraceNearbyBlockLights()
     {
-        ResetRayPool();
-        touchedCells.Clear();
-
-        baseX = centerX - LIGHT_GRID_HALF;
-        baseY = centerY - LIGHT_GRID_HALF;
-        baseZ = centerZ - LIGHT_GRID_HALF;
+        // Keep all source contributions in visitedNodes for this batch.
+        RecycleVisitedNodes();
 
         for (int srcIdx = 0; srcIdx < nearbyCount; srcIdx++)
         {
-            byte h = nearbyH[srcIdx], s = nearbyS[srcIdx], b = nearbyB[srcIdx];
-            if (b <= 0) continue;
+            byte h = nearbyH[srcIdx];
+            byte s = nearbyS[srcIdx];
+            byte brightness = nearbyB[srcIdx];
 
-            var src = nearbyLightSourcesArray[srcIdx];
-            ApplyLightToBlock(src.posX, src.posY, src.posZ, b, h, s, b, srcIdx);
+            if (brightness <= 0)
+                continue;
 
-            float srcX = src.posX + 0.5f;
-            float srcY = src.posY + 0.5f;
-            float srcZ = src.posZ + 0.5f;
+            NearbyLightSourceStruct source =
+                nearbyLightSourcesArray[srcIdx];
 
-            // Адаптивная плотность лучей под яркость (= радиус) конкретного источника
-            var (dirs, rayCount) = GetOrBuildSphereForRadius(b);
+            // Reuse the ray pool for one source at a time.
+            // visitedNodes remains shared across all sources.
+            ResetRayPool();
 
-            for (int i = 0; i < rayCount; i++)
+            ApplyLightToBlock(
+                source.posX,
+                source.posY,
+                source.posZ,
+                brightness,
+                h,
+                s,
+                brightness,
+                srcIdx
+            );
+
+            float sourceX = source.posX + 0.5f;
+            float sourceY = source.posY + 0.5f;
+            float sourceZ = source.posZ + 0.5f;
+
+            var sphere = GetOrBuildSphereForRadius(brightness);
+            float[][] dirs = sphere.dirs;
+            int rayCount = sphere.count;
+
+            for (int rayIndex = 0; rayIndex < rayCount; rayIndex++)
             {
-                SpawnRay(srcX, srcY, srcZ,
-                    dirs[i][0], dirs[i][1], dirs[i][2],
-                    b, h, s, b, 0, srcIdx);
-            }
-        }
+                float[] direction = dirs[rayIndex];
 
-        while (activeRayCount > 0)
-        {
-            var ray = DequeueRay();
-            ProcessRay(ray, range);
+                SpawnRay(
+                    sourceX,
+                    sourceY,
+                    sourceZ,
+                    direction[0],
+                    direction[1],
+                    direction[2],
+                    brightness,
+                    h,
+                    s,
+                    brightness,
+                    0,
+                    srcIdx
+                );
+            }
+
+            // Finish this source completely, including reflection rays,
+            // before starting the next source.
+            while (activeRayCount > 0)
+            {
+                LightRay ray = DequeueRay();
+                ProcessRay(ray, brightness);
+            }
         }
     }
     #endregion
@@ -599,7 +768,6 @@ public class LumosChunkIlluminator
         this.readBlockAccess = readBlockAccess;
         this.chunkProvider = chunkProvider;
         this.chunkSize = chunkSize;
-        System.Diagnostics.Debug.Assert((chunkSize & (chunkSize - 1)) == 0, "chunkSize must be a power of two");
 
         int cs = chunkSize, log2 = 0;
         while ((cs >>= 1) > 0) log2++;
@@ -609,7 +777,7 @@ public class LumosChunkIlluminator
         ZPlus = chunkSize;
 
         currentVisited = new int[DARKNESS_VISITED_SIZE];
-        lightGrid = new LightCell[LIGHT_GRID_SIZE];
+        // lightGrid больше не нужен — используем visitedNodes (Dictionary)
 
         int maxSources = 27 * YPlus * chunkSize;
         nearbyLightSourcesArray = new NearbyLightSourceStruct[maxSources];
@@ -632,33 +800,72 @@ public class LumosChunkIlluminator
         this.mapsizez = mapsizez;
     }
 
-    public FastSetOfLongs PlaceBlockLight(byte[] lightHsv, int posX, int posY, int posZ)
+    public FastSetOfLongs PlaceBlockLight(
+        byte[] lightHsv,
+        int posX,
+        int posY,
+        int posZ)
     {
-        FastSetOfLongs fastSetOfLongs = new FastSetOfLongs();
-        IWorldChunk chunkAtPos = GetChunkAtPos(posX, posY, posZ);
-        if (chunkAtPos == null) return fastSetOfLongs;
-        chunkAtPos.LightPositions.Add(InChunkIndex(posX, posY, posZ));
-        UpdateLightAt(lightHsv[2], posX, posY, posZ, fastSetOfLongs);
-        return fastSetOfLongs;
+        FastSetOfLongs result = new FastSetOfLongs();
+
+        if (blockTypes == null ||
+            lightHsv == null ||
+            lightHsv.Length < 3 ||
+            lightHsv[2] <= 0)
+        {
+            return result;
+        }
+
+        IWorldChunk chunk = GetChunkAtPos(posX, posY, posZ);
+        if (chunk == null)
+            return result;
+
+        int lightPosition = InChunkIndex(posX, posY, posZ);
+
+        if (!chunk.LightPositions.Contains(lightPosition))
+        {
+            chunk.LightPositions.Add(lightPosition);
+        }
+
+        // Do not recalculate immediately. The ServerSystemRelight postfix
+        // flushes the entire lighting-task batch once.
+        QueueDirtyLightSphere(posX, posY, posZ, lightHsv[2]);
+
+        return result;
     }
 
-    public FastSetOfLongs RemoveBlockLight(byte[] oldLightHsv, int posX, int posY, int posZ)
+    public FastSetOfLongs RemoveBlockLight(
+        byte[] oldLightHsv,
+        int posX,
+        int posY,
+        int posZ)
     {
-        FastSetOfLongs fastSetOfLongs = new FastSetOfLongs();
-        IWorldChunk chunkAtPos = GetChunkAtPos(posX, posY, posZ);
-        if (chunkAtPos == null) return fastSetOfLongs;
+        FastSetOfLongs result = new FastSetOfLongs();
 
-        chunkAtPos.LightPositions.Remove(InChunkIndex(posX, posY, posZ));
+        if (blockTypes == null ||
+            oldLightHsv == null ||
+            oldLightHsv.Length < 3)
+        {
+            return result;
+        }
 
-        int num = oldLightHsv[2];
-        if (num == 18) num = 20;
-        int rangeNext = num - chunkAtPos.GetLightAbsorptionAt(InChunkIndex(posX, posY, posZ), tmpPos.Set(posX, posY, posZ), blockTypes) - 1;
+        IWorldChunk chunk = GetChunkAtPos(posX, posY, posZ);
+        if (chunk == null)
+            return result;
 
-        // 🟢 ЗАМЕНА: Сферическая очистка вместо манхэттенского BFS
-        ClearLightSpherical(rangeNext, posX, posY, posZ, fastSetOfLongs);
+        int lightPosition = InChunkIndex(posX, posY, posZ);
+        chunk.LightPositions.Remove(lightPosition);
 
-        UpdateLightAt(num, posX, posY, posZ, fastSetOfLongs);
-        return fastSetOfLongs;
+        int oldRadius = oldLightHsv[2];
+
+        // Preserve the vanilla special case.
+        if (oldRadius == 18)
+            oldRadius = 20;
+
+        // Old block-light is cleared by the unified dirty-region pass.
+        QueueDirtyLightSphere(posX, posY, posZ, oldRadius);
+
+        return result;
     }
 
     /// <summary> Очистка света по сфере, совпадающей с формой излучения рейтрейсера </summary>
@@ -708,56 +915,58 @@ public class LumosChunkIlluminator
     }
 
 
-    public FastSetOfLongs UpdateBlockLight(int oldLightAbsorb, int newLightAbsorb, int posX, int posY, int posZ)
+    public FastSetOfLongs UpdateBlockLight(
+        int oldLightAbsorb,
+        int newLightAbsorb,
+        int posX,
+        int posY,
+        int posZ)
     {
-        FastSetOfLongs fastSetOfLongs = new FastSetOfLongs();
-        int num = chunkSize;
-        IWorldChunk unpackedChunkFast = chunkProvider.GetUnpackedChunkFast(posX / num, posY / num, posZ / num, notRecentlyAccessed: true);
-        if (unpackedChunkFast == null) return fastSetOfLongs;
+        FastSetOfLongs result = new FastSetOfLongs();
 
-        int index3d = (posY % num * num + posZ % num) * num + posX % num;
-        int blocklight = unpackedChunkFast.Lighting.GetBlocklight(index3d);
+        if (blockTypes == null)
+            return result;
 
-        if (oldLightAbsorb == newLightAbsorb) return fastSetOfLongs;
+        if (oldLightAbsorb == newLightAbsorb)
+            return result;
 
-        // ИСПРАВЛЕНИЕ 1: Распространяем "тьму" только если здесь был свет
-        if (newLightAbsorb > oldLightAbsorb && blocklight > 0)
-        {
-            int rangeNext = blocklight - oldLightAbsorb - 1;
-            SpreadDarkness(rangeNext, posX, posY, posZ, fastSetOfLongs);
-        }
+        // A transparency change can both remove existing light and reveal
+        // a source that was previously blocked. Use the maximum light radius.
+        QueueDirtyLightSphere(
+            posX,
+            posY,
+            posZ,
+            MAX_BLOCK_LIGHT_LEVEL
+        );
 
-        // ИСПРАВЛЕНИЕ 2: Используем больший range, чтобы гарантированно захватить
-        // все nearby источники света, даже если они далеко от этой позиции.
-        // 32 = размер чанка, этого достаточно для 3x3x3 чанков вокруг точки.
-        int effectiveRange = Math.Max(blocklight, 32);
-        UpdateLightAt(effectiveRange, posX, posY, posZ, fastSetOfLongs);
-
-        return fastSetOfLongs;
+        return result;
     }
 
-    public void UpdateLightAt(int range, int posX, int posY, int posZ, FastSetOfLongs touchedChunks)
+
+
+    public void UpdateLightAt(
+        int range,
+        int posX,
+        int posY,
+        int posZ,
+        FastSetOfLongs touchedChunks)
     {
-        iteration++;
-        int num = chunkSize;
+        if (range <= 0)
+            return;
 
-        LoadNearbyLightSources(posX, posY, posZ, range);
+        QueueDirtyLightSphere(
+            posX,
+            posY,
+            posZ,
+            range
+        );
 
-        // ЗАМЕНА: вместо MultiSourceBFS используем рейтрейсинг
-        TraceBlockLight(posX, posY, posZ, range);
+        FastSetOfLongs flushedChunks =
+            FlushPendingBlockLightUpdates();
 
-        int baseX = posX - LIGHT_GRID_HALF;
-        int baseY = posY - LIGHT_GRID_HALF;
-        int baseZ = posZ - LIGHT_GRID_HALF;
-
-        for (int i = 0; i < touchedCells.Count; i++)
+        foreach (long chunkIndex in flushedChunks)
         {
-            int idx = touchedCells[i];
-            ref var cell = ref lightGrid[idx];
-            IndexToCoords(idx, out int lx, out int ly, out int lz);
-            int wx = lx + baseX; int wy = ly + baseY; int wz = lz + baseZ;
-            RecalcBlockLightAtPos(wx, wy, wz, ref cell);
-            touchedChunks.Add(chunkProvider.ChunkIndex3D(wx / num, wy / num, wz / num));
+            touchedChunks.Add(chunkIndex);
         }
     }
 
@@ -855,122 +1064,479 @@ public class LumosChunkIlluminator
         return chunkProvider.ChunkIndex3D(posX / chunkSize, posY / chunkSize, posZ / chunkSize);
     }
 
-    private void LoadNearbyLightSources(int posX, int posY, int posZ, int range)
+    private void LoadSourcesIntersectingDirtySpheres(
+        List<DirtyLightSphere> spheres)
     {
         nearbyCount = 0;
+        nearbySourceIndexByPosition.Clear();
 
-        int num = posX / chunkSize;
-        int num2 = posY / chunkSize;
-        int num3 = posZ / chunkSize;
-
-        // Адаптивный радиус поиска в чанках.
-        // range = яркость удалённого источника.
-        // +32 = максимальная яркость nearby источника (31) + запас.
-        // Ceiling division гарантирует покрытие в худшем случае
-        // (когда точка в конце чанка и покрытие в одну сторону минимально).
-        int searchChunks = (range + 32 + chunkSize - 1) / chunkSize;
-
-        IWorldChunk chunk;
-        for (int i = -searchChunks; i <= searchChunks; i++)
+        if (spheres.Count == 0 ||
+            blockTypes == null ||
+            chunkProvider == null)
         {
-            for (int j = -searchChunks; j <= searchChunks; j++)
+            return;
+        }
+
+        // Build one conservative search AABB around all dirty spheres.
+        // This is particularly effective for the arena case, where dirty
+        // regions overlap heavily.
+        int minX = mapsizex - 1;
+        int minY = mapsizey - 1;
+        int minZ = mapsizez - 1;
+        int maxX = 0;
+        int maxY = 0;
+        int maxZ = 0;
+
+        for (int i = 0; i < spheres.Count; i++)
+        {
+            DirtyLightSphere sphere = spheres[i];
+            int scanRadius = sphere.Radius + MAX_BLOCK_LIGHT_LEVEL;
+
+            minX = Math.Min(minX, sphere.X - scanRadius);
+            minY = Math.Min(minY, sphere.Y - scanRadius);
+            minZ = Math.Min(minZ, sphere.Z - scanRadius);
+            maxX = Math.Max(maxX, sphere.X + scanRadius);
+            maxY = Math.Max(maxY, sphere.Y + scanRadius);
+            maxZ = Math.Max(maxZ, sphere.Z + scanRadius);
+        }
+
+        minX = Math.Max(0, minX);
+        minY = Math.Max(0, minY);
+        minZ = Math.Max(0, minZ);
+        maxX = Math.Min(mapsizex - 1, maxX);
+        maxY = Math.Min(mapsizey - 1, maxY);
+        maxZ = Math.Min(mapsizez - 1, maxZ);
+
+        int minChunkX = minX / chunkSize;
+        int minChunkY = minY / chunkSize;
+        int minChunkZ = minZ / chunkSize;
+        int maxChunkX = maxX / chunkSize;
+        int maxChunkY = maxY / chunkSize;
+        int maxChunkZ = maxZ / chunkSize;
+
+        for (int chunkX = minChunkX; chunkX <= maxChunkX; chunkX++)
+        {
+            for (int chunkY = minChunkY; chunkY <= maxChunkY; chunkY++)
             {
-                for (int k = -searchChunks; k <= searchChunks; k++)
+                for (int chunkZ = minChunkZ; chunkZ <= maxChunkZ; chunkZ++)
                 {
-                    chunk = chunkProvider.GetChunk(num + i, num2 + j, num3 + k);
-                    if (chunk == null) continue;
+                    IWorldChunk chunk =
+                        chunkProvider.GetChunk(chunkX, chunkY, chunkZ);
+
+                    if (chunk == null)
+                        continue;
+
                     chunk.Unpack_ReadOnly();
 
                     foreach (int lightPosition in chunk.LightPositions)
                     {
-                        int num4 = (num2 + j) * chunkSize + lightPosition / (YPlus);
-                        int num5 = (num3 + k) * chunkSize + lightPosition / chunkSize % chunkSize;
-                        int num6 = (num + i) * chunkSize + lightPosition % chunkSize;
+                        int localY = lightPosition / YPlus;
+                        int localZ = (lightPosition / chunkSize) % chunkSize;
+                        int localX = lightPosition % chunkSize;
 
-                        // 🔴 БЫЛО: Манхэттенское расстояние (куб)
-                        // int num7 = Math.Abs(posX - num6) + Math.Abs(posY - num4) + Math.Abs(posZ - num5);
+                        int sourceX = chunkX * chunkSize + localX;
+                        int sourceY = chunkY * chunkSize + localY;
+                        int sourceZ = chunkZ * chunkSize + localZ;
 
-                        // 🟢 СТАЛО: Евклидово расстояние (сфера)
-                        float dx = posX - num6;
-                        float dy = posY - num4;
-                        float dz = posZ - num5;
-                        float distSq = dx * dx + dy * dy + dz * dz;
+                        long sourceKey = PackPos(sourceX, sourceY, sourceZ);
+
+                        if (nearbySourceIndexByPosition.ContainsKey(sourceKey))
+                            continue;
 
                         Block block = blockTypes[chunk.Data[lightPosition]];
-                        byte[] hsv = block.GetLightHsv(readBlockAccess, tmpPos.Set(num6, num4, num5));
 
-                        // Проверяем, попадает ли источник в сферу влияния (радиус = яркость + range)
-                        float maxDistSq = (hsv[2] + range) * (hsv[2] + range);
+                        byte[] hsv = block.GetLightHsv(
+                            readBlockAccess,
+                            tmpPos.Set(sourceX, sourceY, sourceZ)
+                        );
 
-                        if (distSq <= maxDistSq)
+                        if (hsv == null || hsv.Length < 3 || hsv[2] <= 0)
+                            continue;
+
+                        int sourceRadius = hsv[2];
+                        bool intersectsDirtyRegion = false;
+
+                        for (int sphereIndex = 0;
+                             sphereIndex < spheres.Count;
+                             sphereIndex++)
                         {
-                            if (nearbyCount < nearbyLightSourcesArray.Length)
+                            DirtyLightSphere sphere = spheres[sphereIndex];
+
+                            long dx = (long)sourceX - sphere.X;
+                            long dy = (long)sourceY - sphere.Y;
+                            long dz = (long)sourceZ - sphere.Z;
+                            long allowedDistance = sourceRadius + sphere.Radius;
+
+                            if (dx * dx + dy * dy + dz * dz <=
+                                allowedDistance * allowedDistance)
                             {
-                                nearbyLightSourcesArray[nearbyCount] = new NearbyLightSourceStruct
-                                {
-                                    posX = num6,
-                                    posY = num4,
-                                    posZ = num5
-                                };
-                                nearbyH[nearbyCount] = hsv[0];
-                                nearbyS[nearbyCount] = hsv[1];
-                                nearbyB[nearbyCount] = hsv[2];
-                                nearbyCount++;
+                                intersectsDirtyRegion = true;
+                                break;
                             }
                         }
+
+                        if (!intersectsDirtyRegion)
+                            continue;
+
+                        TryAddNearbyLightSource(
+                            sourceX,
+                            sourceY,
+                            sourceZ,
+                            hsv[0],
+                            hsv[1],
+                            hsv[2]
+                        );
                     }
                 }
             }
         }
     }
 
-    private void RecalcBlockLightAtPos(int posX, int posY, int posZ, ref LightCell cell)
+    private bool TryAddNearbyLightSource(
+        int posX,
+        int posY,
+        int posZ,
+        byte hue,
+        byte saturation,
+        byte brightness)
+    {
+        if (brightness == 0)
+            return false;
+
+        long positionKey = PackPos(posX, posY, posZ);
+
+        if (nearbySourceIndexByPosition.ContainsKey(positionKey))
+            return false;
+
+        if (nearbyCount >= nearbyLightSourcesArray.Length)
+            return false;
+
+        int sourceIndex = nearbyCount++;
+
+        nearbyLightSourcesArray[sourceIndex] =
+            new NearbyLightSourceStruct
+            {
+                posX = posX,
+                posY = posY,
+                posZ = posZ
+            };
+
+        nearbyH[sourceIndex] = hue;
+        nearbyS[sourceIndex] = saturation;
+        nearbyB[sourceIndex] = brightness;
+
+        nearbySourceIndexByPosition.Add(
+            positionKey,
+            sourceIndex
+        );
+
+        return true;
+    }
+
+    private void RecalcBlockLightAtPos(
+        int posX,
+        int posY,
+        int posZ,
+        LightSourcesAtBlock lsab,
+        Dictionary<long, IWorldChunk> modifiedChunks)
     {
         int num = chunkSize;
-        IWorldChunk unpackedChunkFast = chunkProvider.GetUnpackedChunkFast(posX / num, posY / num, posZ / num, notRecentlyAccessed: true);
-        if (unpackedChunkFast == null) return;
 
-        int index3d = (posY % num * num + posZ % num) * num + posX % num;
+        IWorldChunk chunk =
+            chunkProvider.GetUnpackedChunkFast(
+                posX / num,
+                posY / num,
+                posZ / num,
+                notRecentlyAccessed: true
+            );
 
-        float num2 = 0f;
-        int num3 = 0;
-        int lightCount = cell.trackedCount;
+        if (chunk == null)
+            return;
 
-        if (lightCount == 0)
+        int index3d =
+            (posY % num * num + posZ % num) * num +
+            posX % num;
+
+        int lightCount = lsab.count;
+
+        if (lightCount <= 0)
         {
-            unpackedChunkFast.Lighting.SetBlocklight(index3d, 0);
+            chunk.Lighting.SetBlocklight(index3d, 0);
+
+            long chunkKey = chunkProvider.ChunkIndex3D(
+                posX / num, posY / num, posZ / num);
+
+            modifiedChunks.TryAdd(chunkKey, chunk);
             return;
         }
 
+        float totalWeight = 0f;
+        int maxLevel = 0;
+
         for (int i = 0; i < lightCount; i++)
         {
-            int num4 = LvlSlot(ref cell, i);
-            num3 = Math.Max(num3, num4);
-            num2 += (float)num4;
+            int level = lsab.levels[i];
+
+            if (level > maxLevel)
+                maxLevel = level;
+
+            totalWeight += level;
         }
 
-        if (num3 == 0) { unpackedChunkFast.Lighting.SetBlocklight(index3d, 0); return; }
-
-        float num5 = 0.5f, num6 = 0.5f, num7 = 0.5f;
-
-        for (int j = 0; j < lightCount; j++)
+        if (maxLevel <= 0 || totalWeight <= 0f)
         {
-            int srcIdx = SrcSlot(ref cell, j);
-            int lvl = LvlSlot(ref cell, j);
-            byte h = nearbyH[srcIdx];
-            byte s = nearbyS[srcIdx];
-            int num9 = ColorUtil.HsvToRgb(h * 4, s * 32, lvl * 8);
-            float num10 = (float)lvl / num2;
-            num5 += (float)(num9 >> 16) * num10;
-            num6 += (float)((num9 >> 8) & 0xFF) * num10;
-            num7 += (float)(num9 & 0xFF) * num10;
+            chunk.Lighting.SetBlocklight(index3d, 0);
+
+            long chunkKey = chunkProvider.ChunkIndex3D(
+                posX / num, posY / num, posZ / num);
+
+            modifiedChunks.TryAdd(chunkKey, chunk);
+            return;
         }
 
-        int num11 = ColorUtil.Rgb2Hsv(num5, num6, num7);
-        int num12 = Math.Min((int)((float)(num11 & 0xFF) / 4f + 0.5f), ColorUtil.HueQuantities - 1);
-        int num13 = Math.Min((int)((float)((num11 >> 8) & 0xFF) / 32f + 0.5f), ColorUtil.SatQuantities - 1);
+        // The dirty region was cleared immediately before tracing.
+        // We therefore always write the complete result from all sources
+        // that can affect this position. No stale-light protection is needed.
+        float r = 0.5f;
+        float g = 0.5f;
+        float b = 0.5f;
 
-        unpackedChunkFast.Lighting.SetBlocklight(index3d, (num3 << 5) | (num12 << 10) | (num13 << 16));
+        for (int i = 0; i < lightCount; i++)
+        {
+            int sourceIndex = lsab.srcIds[i];
+            int level = lsab.levels[i];
+
+            if ((uint)sourceIndex >= (uint)nearbyCount)
+                continue;
+
+            byte hue = nearbyH[sourceIndex];
+            byte saturation = nearbyS[sourceIndex];
+
+            int rgb = ColorUtil.HsvToRgb(
+                hue * 4,
+                saturation * 32,
+                level * 8
+            );
+
+            float weight = (float)level / totalWeight;
+
+            r += (rgb >> 16) * weight;
+            g += ((rgb >> 8) & 0xFF) * weight;
+            b += (rgb & 0xFF) * weight;
+        }
+
+        int mixedHsv = ColorUtil.Rgb2Hsv(r, g, b);
+
+        int mixedHue = Math.Min(
+            (int)((mixedHsv & 0xFF) / 4f + 0.5f),
+            ColorUtil.HueQuantities - 1
+        );
+
+        int mixedSaturation = Math.Min(
+            (int)(((mixedHsv >> 8) & 0xFF) / 32f + 0.5f),
+            ColorUtil.SatQuantities - 1
+        );
+
+        int packedLight =
+            (maxLevel << 5) |
+            (mixedHue << 10) |
+            (mixedSaturation << 16);
+
+        chunk.Lighting.SetBlocklight(
+            index3d,
+            packedLight
+        );
+
+        long modifiedChunkKey = chunkProvider.ChunkIndex3D(
+            posX / num, posY / num, posZ / num);
+
+        modifiedChunks.TryAdd(
+            modifiedChunkKey,
+            chunk
+        );
+    }
+
+    private void BuildDirtyLightCellSet(
+        List<DirtyLightSphere> spheres)
+    {
+        dirtyLightCells.Clear();
+
+        for (int sphereIndex = 0;
+             sphereIndex < spheres.Count;
+             sphereIndex++)
+        {
+            DirtyLightSphere sphere = spheres[sphereIndex];
+
+            int radius = sphere.Radius;
+            int radiusSquared = radius * radius;
+
+            int minX = Math.Max(0, sphere.X - radius);
+            int maxX = Math.Min(mapsizex - 1, sphere.X + radius);
+            int minY = Math.Max(0, sphere.Y - radius);
+            int maxY = Math.Min(mapsizey - 1, sphere.Y + radius);
+
+            for (int x = minX; x <= maxX; x++)
+            {
+                int dx = x - sphere.X;
+                int dxSquared = dx * dx;
+
+                for (int y = minY; y <= maxY; y++)
+                {
+                    int dy = y - sphere.Y;
+                    int xySquared = dxSquared + dy * dy;
+
+                    if (xySquared > radiusSquared)
+                        continue;
+
+                    int zRadius = (int)Math.Sqrt(
+                        radiusSquared - xySquared);
+
+                    int minZ = Math.Max(0, sphere.Z - zRadius);
+                    int maxZ = Math.Min(mapsizez - 1, sphere.Z + zRadius);
+
+                    for (int z = minZ; z <= maxZ; z++)
+                    {
+                        dirtyLightCells.Add(
+                            PackPos(x, y, z)
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    private void ClearDirtyLightCells(
+        FastSetOfLongs touchedChunks,
+        Dictionary<long, IWorldChunk> modifiedChunks)
+    {
+        int num = chunkSize;
+
+        foreach (long key in dirtyLightCells)
+        {
+            UnpackPos(key, out int x, out int y, out int z);
+
+            IWorldChunk chunk =
+                chunkProvider.GetUnpackedChunkFast(
+                    x / num,
+                    y / num,
+                    z / num,
+                    notRecentlyAccessed: true
+                );
+
+            if (chunk == null)
+                continue;
+
+            int index3d =
+                (y % num * num + z % num) * num +
+                x % num;
+
+            if (chunk.Lighting.GetBlocklight(index3d) == 0)
+                continue;
+
+            chunk.Lighting.SetBlocklight(index3d, 0);
+
+            long chunkKey = chunkProvider.ChunkIndex3D(
+                x / num, y / num, z / num);
+
+            touchedChunks.Add(chunkKey);
+            modifiedChunks.TryAdd(chunkKey, chunk);
+        }
+    }
+
+    public FastSetOfLongs FlushPendingBlockLightUpdates()
+    {
+        FastSetOfLongs touchedChunks = new FastSetOfLongs();
+
+        if (isFlushingBlockLight ||
+            pendingDirtySpheres.Count == 0)
+        {
+            return touchedChunks;
+        }
+
+        isFlushingBlockLight = true;
+
+        Dictionary<long, IWorldChunk> modifiedChunks =
+            new Dictionary<long, IWorldChunk>(128);
+
+        try
+        {
+            dirtySphereBuffer.Clear();
+
+            foreach (DirtyLightSphere sphere in pendingDirtySpheres.Values)
+            {
+                dirtySphereBuffer.Add(sphere);
+            }
+
+            // Detach the current batch before calculating it.
+            // New changes arriving during the calculation stay queued for the next flush.
+            pendingDirtySpheres.Clear();
+
+            BuildDirtyLightCellSet(
+                dirtySphereBuffer
+            );
+
+            if (dirtyLightCells.Count == 0)
+                return touchedChunks;
+
+            LoadSourcesIntersectingDirtySpheres(
+                dirtySphereBuffer
+            );
+
+            // 1. Clear the old light in the entire dirty region.
+            ClearDirtyLightCells(
+                touchedChunks,
+                modifiedChunks
+            );
+
+            // 2. Trace each relevant source exactly once.
+            TraceNearbyBlockLights();
+
+            // 3. Write only inside the dirty region.
+            foreach (KeyValuePair<long, LightSourcesAtBlock> pair
+                     in visitedNodes)
+            {
+                long positionKey = pair.Key;
+
+                if (!dirtyLightCells.Contains(positionKey))
+                    continue;
+
+                UnpackPos(
+                    positionKey,
+                    out int x,
+                    out int y,
+                    out int z
+                );
+
+                RecalcBlockLightAtPos(
+                    x,
+                    y,
+                    z,
+                    pair.Value,
+                    modifiedChunks
+                );
+
+                touchedChunks.Add(
+                    chunkProvider.ChunkIndex3D(
+                        x / chunkSize,
+                        y / chunkSize,
+                        z / chunkSize
+                    )
+                );
+            }
+
+            foreach (IWorldChunk chunk in modifiedChunks.Values)
+            {
+                chunk.MarkModified();
+            }
+
+            return touchedChunks;
+        }
+        finally
+        {
+            dirtyLightCells.Clear();
+            dirtySphereBuffer.Clear();
+            isFlushingBlockLight = false;
+        }
     }
 
     /// <summary> Full recalculation of light in a given cubic region </summary>
@@ -1046,56 +1612,51 @@ public class LumosChunkIlluminator
             }
         }
 
-        // 5. Collect all light sources in the region
-        Dictionary<BlockPos, Block> dictionary2 = new Dictionary<BlockPos, Block>();
-        foreach (KeyValuePair<Vec3i, IWorldChunk> item in dictionary)
+        // 5. Recalculate the complete region that was cleared above.
+        // Build a sphere containing the cleared bounding box.
+        // Flush will discover every source whose light can reach this region,
+        // including sources outside the region itself.
+        int centerX =
+            (num2 + num5) / 2;
+
+        int centerY =
+            (num3 + num6) / 2;
+
+        int centerZ =
+            (num4 + num7) / 2;
+
+        double halfX =
+            (num5 - num2) * 0.5;
+
+        double halfY =
+            (num6 - num3) * 0.5;
+
+        double halfZ =
+            (num7 - num4) * 0.5;
+
+        int fullRelightRadius =
+            (int)Math.Ceiling(
+                Math.Sqrt(
+                    halfX * halfX +
+                    halfY * halfY +
+                    halfZ * halfZ
+                )
+            );
+
+        FastSetOfLongs touchedChunks =
+            new FastSetOfLongs();
+
+        UpdateLightAt(
+            fullRelightRadius,
+            centerX,
+            centerY,
+            centerZ,
+            touchedChunks
+        );
+
+        foreach (IWorldChunk value in dictionary.Values)
         {
-            Vec3i key = item.Key;
-            IWorldChunk value = item.Value;
-            if (value == null) continue;
-
-            int chunkBaseX = key.X * num;
-            int chunkBaseY = key.Y * num;
-            int chunkBaseZ = key.Z * num;
-
-            foreach (int lightPosition in value.LightPositions)
-            {
-                int localY = lightPosition / (num * num);
-                int localZ = (lightPosition / num) % num;
-                int localX = lightPosition % num;
-
-                int worldX = chunkBaseX + localX;
-                int worldY = chunkBaseY + localY;
-                int worldZ = chunkBaseZ + localZ;
-
-                BlockPos worldPos = new BlockPos(worldX, worldY, worldZ, minPos.dimension);
-                dictionary2[worldPos] = blockTypes[value.Data[lightPosition]];
-            }
-        }
-
-        // 6. Find the geometric center of all sources
-        // BFS builds a 128x128x128 grid around the passed point.
-        // If called from the center of mass, the grid will cover all torches in the chunk (32³) with a margin.
-        if (dictionary2.Count > 0)
-        {
-            long sumX = 0, sumY = 0, sumZ = 0;
-            int maxRange = 0;
-            foreach (var kvp in dictionary2)
-            {
-                sumX += kvp.Key.X;
-                sumY += kvp.Key.InternalY;
-                sumZ += kvp.Key.Z;
-                byte[] hsv = kvp.Value.GetLightHsv(readBlockAccess, kvp.Key);
-                if (hsv[2] > maxRange) maxRange = hsv[2];
-            }
-
-            int centerX = (int)(sumX / dictionary2.Count);
-            int centerY = (int)(sumY / dictionary2.Count);
-            int centerZ = (int)(sumZ / dictionary2.Count);
-
-            // A SINGLE call to UpdateLightAt from the center
-            FastSetOfLongs touchedChunks = new FastSetOfLongs();
-            UpdateLightAt(maxRange, centerX, centerY, centerZ, touchedChunks);
+            value?.MarkModified();
         }
     }
 
@@ -1353,110 +1914,67 @@ public class LumosChunkIlluminator
     }
 
     /// <summary> Processing a batch of deferred block light updates  </summary>
-    public void ProcessScheduledBlockLightUpdates(List<Vec4i> scheduledUpdates)
+    public void ProcessScheduledBlockLightUpdates(
+        List<Vec4i> scheduledUpdates)
     {
-        if (scheduledUpdates == null || scheduledUpdates.Count == 0) return;
+        if (scheduledUpdates == null ||
+            scheduledUpdates.Count == 0)
+        {
+            return;
+        }
 
-        // 1. Collect all light sources and register them in chunks
-        var sources = new List<(int x, int y, int z, byte h, byte s, byte b)>();
         BlockPos blockPos = new BlockPos(0);
 
         foreach (Vec4i item in scheduledUpdates)
         {
             Block block = blockTypes[item.W];
-            blockPos.SetAndCorrectDimension(item.X, item.Y, item.Z);
-            byte[] lightHsv = block.GetLightHsv(readBlockAccess, blockPos);
 
-            if (lightHsv[2] > 0) // Only light sources (brightness > 0)
+            blockPos.SetAndCorrectDimension(
+                item.X,
+                item.Y,
+                item.Z
+            );
+
+            byte[] hsv = block.GetLightHsv(
+                readBlockAccess,
+                blockPos
+            );
+
+            if (hsv == null ||
+                hsv.Length < 3 ||
+                hsv[2] <= 0)
             {
-                IWorldChunk chunkAtPos = GetChunkAtPos(blockPos.X, blockPos.InternalY, blockPos.Z);
-                if (chunkAtPos != null)
-                {
-                    int inChunkIndex = InChunkIndex(blockPos.X, blockPos.InternalY, blockPos.Z);
-                    // Protection against duplicates: one block can be in the list multiple times
-                    if (!chunkAtPos.LightPositions.Contains(inChunkIndex))
-                        chunkAtPos.LightPositions.Add(inChunkIndex);
-
-                    sources.Add((blockPos.X, blockPos.InternalY, blockPos.Z,
-                        lightHsv[0], lightHsv[1], lightHsv[2]));
-                }
+                continue;
             }
+
+            int x = blockPos.X;
+            int y = blockPos.InternalY;
+            int z = blockPos.Z;
+
+            IWorldChunk chunk =
+                GetChunkAtPos(x, y, z);
+
+            if (chunk == null)
+                continue;
+
+            int lightPosition =
+                InChunkIndex(x, y, z);
+
+            if (!chunk.LightPositions.Contains(lightPosition))
+            {
+                chunk.LightPositions.Add(lightPosition);
+            }
+
+            QueueDirtyLightSphere(
+                x,
+                y,
+                z,
+                hsv[2]
+            );
         }
 
-        if (sources.Count == 0)
-            return;
-
-        // 2. Cluster sources by bounding box
-        // Group sources so that their common bounding box fits into the BFS grid (128³).
-        // This guarantees that a single call to UpdateLightAt will cover the entire cluster.
-        var clusters = new List<List<(int x, int y, int z, byte h, byte s, byte b)>>();
-        var bounds = new List<(int minX, int maxX, int minY, int maxY, int minZ, int maxZ)>();
-
-        foreach (var src in sources)
-        {
-            bool added = false;
-            for (int i = 0; i < clusters.Count; i++)
-            {
-                var b = bounds[i];
-                int newMinX = Math.Min(b.minX, src.x);
-                int newMaxX = Math.Max(b.maxX, src.x);
-                int newMinY = Math.Min(b.minY, src.y);
-                int newMaxY = Math.Max(b.maxY, src.y);
-                int newMinZ = Math.Min(b.minZ, src.z);
-                int newMaxZ = Math.Max(b.maxZ, src.z);
-
-                // Check if the expanded bounding box will fit into the 128³ grid
-                if (newMaxX - newMinX <= LIGHT_GRID_WIDTH &&
-                    newMaxY - newMinY <= LIGHT_GRID_WIDTH &&
-                    newMaxZ - newMinZ <= LIGHT_GRID_WIDTH)
-                {
-                    clusters[i].Add(src);
-                    bounds[i] = (newMinX, newMaxX, newMinY, newMaxY, newMinZ, newMaxZ);
-                    added = true;
-                    break;
-                }
-            }
-
-            if (!added)
-            {
-                var newCluster = new List<(int x, int y, int z, byte h, byte s, byte b)> { src };
-                clusters.Add(newCluster);
-                bounds.Add((src.x, src.x, src.y, src.y, src.z, src.z));
-            }
-        }
-
-        // 3. For each cluster, call UpdateLightAt from the center of its bounding box
-        foreach (var cluster in clusters)
-        {
-            int minX = int.MaxValue, maxX = int.MinValue;
-            int minY = int.MaxValue, maxY = int.MinValue;
-            int minZ = int.MaxValue, maxZ = int.MinValue;
-            int maxRange = 0;
-
-            foreach (var src in cluster)
-            {
-                if (src.x < minX) minX = src.x;
-                if (src.x > maxX) maxX = src.x;
-                if (src.y < minY) minY = src.y;
-                if (src.y > maxY) maxY = src.y;
-                if (src.z < minZ) minZ = src.z;
-                if (src.z > maxZ) maxZ = src.z;
-                if (src.b > maxRange) maxRange = src.b;
-            }
-
-            int centerX = (minX + maxX) / 2;
-            int centerY = (minY + maxY) / 2;
-            int centerZ = (minZ + maxZ) / 2;
-
-            // halfBBSize = maximum Manhattan distance from the center to the corner of the bounding box.
-            // We pass Math.Max(maxRange, halfBBSize) so that the cutoff in MultiSourceBFS
-            // (ndist >= range + newLevel) does not clip the light inside the bounding box.
-            int halfBBSize = (maxX - minX) / 2 + (maxY - minY) / 2 + (maxZ - minZ) / 2;
-            int effectiveRange = Math.Max(maxRange, halfBBSize);
-
-            FastSetOfLongs touchedChunks = new FastSetOfLongs();
-            UpdateLightAt(effectiveRange, centerX, centerY, centerZ, touchedChunks);
-        }
+        // The scheduled list is already one batch.
+        FlushPendingBlockLightUpdates();
     }
 
     /// <summary> BFS propagation of sunlight over a stack of coordinates. </summary>
@@ -1917,4 +2435,3 @@ public class LumosChunkIlluminator
         queueOfIntPool.Push(queueOfInt);
     }
 }
-// Stratum end

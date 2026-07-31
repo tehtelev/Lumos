@@ -52,6 +52,16 @@ public static class LumosStateHolder
     }
 
     /// <summary>
+    /// Пробует получить LumosChunkIlluminator без создания.
+    /// Возвращает false, если инстанс ещё не был создан через GetOrCreate.
+    /// </summary>
+    public static bool TryGet(ChunkIlluminator vanilla, out LumosChunkIlluminator lumos)
+    {
+        return _map.TryGetValue(vanilla, out lumos);
+    }
+
+
+    /// <summary>
     /// Фабрика: создаёт LumosChunkIlluminator и копирует все поля из ванильного инстанса.
     /// Вызывается один раз на каждый ChunkIlluminator.
     /// </summary>
