@@ -19,6 +19,9 @@ namespace Lumos.Core;
 // - Ray Tracing: Direct light with single-bounce reflections (50% normal blocks, 100% glass/water)
 // - Directional Absorption: Universal face-checking system correctly handles light propagation through slabs, stairs, and volumetric transparent blocks
 // - Sunlight Invalidation: Rewrote UpdateSunLight to correctly extinguish trapped sunlight in sealed caves and rooms
+// - Microblock-aware absorption: chisel blocks (BlockMicroBlock) are resolved through their
+//   BlockEntityMicroBlock instead of the static block-type LightAbsorption/SideSolid, which are
+//   meaningless for them (see GetBlockAndAbsorption / GetSolidMask).
 // Limitations:
 // Hard limit of 128³: Light is clipped at boundaries (same as vanilla)
 // Color distortion: Top-4 limit for HSV mixing
@@ -117,19 +120,75 @@ public class LumosChunkIlluminator
     }
     #endregion
 
-    // Кэш поглощения света для каждого BlockId. 
+    // Кэш поглощения света для каждого BlockId.
     // Заполняется один раз при инициализации мира, чтобы убрать виртуальные вызовы в горячих циклах.
+    // ВАЖНО: для чизельных блоков (BlockMicroBlock) это значение — не более чем статическая
+    // заглушка из JSON (обычно 99) и НЕ используется напрямую; см. isMicroblockCache и
+    // GetBlockAndAbsorption ниже, где для них берётся реальное поглощение из BlockEntity.
     private int[] absorptionCache;
 
+    // Кэш "является ли блок чизельным" (BlockMicroBlock) для каждого BlockId.
+    // Позволяет за одну проверку по массиву решить, нужен ли дорогой путь через
+    // BlockEntity, вместоviртуального `is` на каждый блок в трассировке.
+    private bool[] isMicroblockCache;
+
+    /// <summary>
+    /// Собирает packed bitmask солидности граней (биты 0..5 = грани BlockFacing.Index)
+    /// для блока в текущей позиции.
+    ///
+    /// Для чизельных блоков читает уже готовый bitmask конкретного BlockEntity
+    /// (та же битовая раскладка: bit i означает "грань i почти сплошная"),
+    /// без единого виртуального вызова через IBlockAccessor.
+    /// Для обычных блоков — статический Block.SideSolid, как и раньше.
+    ///
+    /// Используется одинаково и в GetEffectiveAbsorption, и в ProcessRay/Sunlight/
+    /// SpreadSunLightInColumn — единая точка правды вместо дублирования 6 строк на месте.
+    /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private void GetBlockAndAbsorption(IWorldChunk chunk, int index3d, out Block block, out int baseAbsorption)
+    private static int GetSolidMask(Block block, BlockEntityMicroBlock microBE)
+    {
+        if (microBE != null)
+            return microBE.sideAlmostSolid.Value();
+
+        int mask = 0;
+        if (block.SideSolid[0]) mask |= 1;
+        if (block.SideSolid[1]) mask |= 2;
+        if (block.SideSolid[2]) mask |= 4;
+        if (block.SideSolid[3]) mask |= 8;
+        if (block.SideSolid[4]) mask |= 16;
+        if (block.SideSolid[5]) mask |= 32;
+        return mask;
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private void GetBlockAndAbsorption(
+        IWorldChunk chunk,
+        int index3d,
+        BlockPos pos,
+        out Block block,
+        out int baseAbsorption,
+        out BlockEntityMicroBlock microBE)
     {
         // Layer 0 = твердые блоки, Layer 1 = жидкости (вода, лава)
         int solidId = chunk.Data.GetBlockId(index3d, 0); // Аналог chunk.Data[index3d]
         int fluidId = chunk.Data.GetBlockId(index3d, 1);
 
-        // Мгновенное чтение из L1-кэша процессора, без виртуальных вызовов
-        baseAbsorption = absorptionCache[solidId];
+        microBE = null;
+
+        if (isMicroblockCache[solidId])
+        {
+            // Чизельный блок: статический absorptionCache/SideSolid для него бессмысленны —
+            // реальное поглощение и форма зависят от конкретного набора вокселей и материалов
+            // этого BlockEntity. Это единственный "дорогой" путь (dictionary lookup внутри
+            // chunk), и он выполняется только для реальных чизель-блоков, не для всех подряд.
+            microBE = chunk.GetLocalBlockEntityAtBlockPos(pos) as BlockEntityMicroBlock;
+            baseAbsorption = microBE != null ? microBE.GetLightAbsorption() : absorptionCache[solidId];
+        }
+        else
+        {
+            // Мгновенное чтение из L1-кэша процессора, без виртуальных вызовов
+            baseAbsorption = absorptionCache[solidId];
+        }
 
         // Учитываем слой жидкостей, как это делает оригинальный метод
         if (fluidId != 0)
@@ -683,30 +742,25 @@ public class LumosChunkIlluminator
             IWorldChunk chunk = cachedChunk;
 
             int index3d = (y % chunkSize * chunkSize + z % chunkSize) * chunkSize + x % chunkSize;
-            GetBlockAndAbsorption(chunk, index3d, out Block block, out int baseAbsorption);
             tmpPos.Set(x, y, z);
+            GetBlockAndAbsorption(chunk, index3d, tmpPos, out Block block, out int baseAbsorption, out BlockEntityMicroBlock microBE);
 
             energy -= stepDistance;
             float energyAtSurface = energy;
 
-            float effectiveAbs = GetEffectiveAbsorption(block, baseAbsorption, hitFace, energy, tmpPos);
+            float effectiveAbs = GetEffectiveAbsorption(block, baseAbsorption, hitFace, energy, microBE, tmpPos);
             if (effectiveAbs > 0f)
                 energy -= effectiveAbs;
 
+            // Единая маска солидности (для чизель-блоков — из BlockEntity, не из статики).
+            int solidMask = GetSolidMask(block, microBE);
+
             bool isOpaque = effectiveAbs > 0 && (
-                block.SideSolid[hitFace.Index] ||
-                block.SideSolid[hitFace.Opposite.Index] ||
+                (solidMask & (1 << hitFace.Index)) != 0 ||
+                (solidMask & (1 << hitFace.Opposite.Index)) != 0 ||
                 block.IsLiquid() ||
                 block.Replaceable >= 6000
             );
-
-            int solidMask = 0;
-            if (block.SideSolid[0]) solidMask |= 1;
-            if (block.SideSolid[1]) solidMask |= 2;
-            if (block.SideSolid[2]) solidMask |= 4;
-            if (block.SideSolid[3]) solidMask |= 8;
-            if (block.SideSolid[4]) solidMask |= 16;
-            if (block.SideSolid[5]) solidMask |= 32;
 
             if (energy > 0 && (!isOpaque || solidMask == 63))
                 ApplyLightToBlock(x, y, z, energy, ray.SourceId);
@@ -864,11 +918,13 @@ public class LumosChunkIlluminator
         this.mapsizey = mapsizey;
         this.mapsizez = mapsizez;
 
-        // Инициализация кэша поглощения
+        // Инициализация кэша поглощения и кэша "это чизельный блок?"
         absorptionCache = new int[blockTypes.Count];
+        isMicroblockCache = new bool[blockTypes.Count];
         for (int i = 0; i < blockTypes.Count; i++)
         {
             absorptionCache[i] = blockTypes[i].LightAbsorption;
+            isMicroblockCache[i] = blockTypes[i] is BlockMicroBlock;
         }
     }
 
@@ -940,7 +996,7 @@ public class LumosChunkIlluminator
         return result;
     }
 
-    
+
 
 
     public FastSetOfLongs UpdateBlockLight(
@@ -1007,19 +1063,16 @@ public class LumosChunkIlluminator
         int baseAbsorption,
         BlockFacing dir,
         float incomingEnergy,
+        BlockEntityMicroBlock microBE = null,
         BlockPos pos = null)
     {
         // ── Ступень 0: прозрачные ──
         if (baseAbsorption <= 0) return 0f;
 
         // ── Ступень 1: маска солидности ──
-        int solidMask = 0;
-        if (block.SideSolid[0]) solidMask |= 1;
-        if (block.SideSolid[1]) solidMask |= 2;
-        if (block.SideSolid[2]) solidMask |= 4;
-        if (block.SideSolid[3]) solidMask |= 8;
-        if (block.SideSolid[4]) solidMask |= 16;
-        if (block.SideSolid[5]) solidMask |= 32;
+        // Для чизель-блоков используем готовый bitmask конкретного BlockEntity —
+        // тот же путь, что и в ProcessRay/Sunlight/SpreadSunLightInColumn.
+        int solidMask = GetSolidMask(block, microBE);
 
         // ── Ступень 2: полный блок ──
         if (solidMask == 63)
@@ -1033,14 +1086,28 @@ public class LumosChunkIlluminator
         BlockFacing incoming = dir.Opposite;
         BlockFacing outgoing = dir;
 
-        bool incomingSolid = (pos != null && readBlockAccess != null)
-            ? block.SideIsSolid(readBlockAccess, pos, incoming.Index)
-            : block.SideSolid[incoming.Index];
-        if (incomingSolid) return baseAbsorption;
+        bool incomingSolid;
+        bool outgoingSolid;
 
-        bool outgoingSolid = (pos != null && readBlockAccess != null)
-            ? block.SideIsSolid(readBlockAccess, pos, outgoing.Index)
-            : block.SideSolid[outgoing.Index];
+        if (microBE != null)
+        {
+            // Прямое чтение поля BlockEntity — без похода через виртуальный
+            // Block.SideIsSolid и повторного lookup'а BlockEntity по позиции.
+            incomingSolid = microBE.sideAlmostSolid[incoming.Index];
+            outgoingSolid = microBE.sideAlmostSolid[outgoing.Index];
+        }
+        else
+        {
+            incomingSolid = (pos != null && readBlockAccess != null)
+                ? block.SideIsSolid(readBlockAccess, pos, incoming.Index)
+                : block.SideSolid[incoming.Index];
+
+            outgoingSolid = (pos != null && readBlockAccess != null)
+                ? block.SideIsSolid(readBlockAccess, pos, outgoing.Index)
+                : block.SideSolid[outgoing.Index];
+        }
+
+        if (incomingSolid) return baseAbsorption;
         if (outgoingSolid) return baseAbsorption;
 
         // ── Ступень 5: ребро / проём ──
@@ -1695,30 +1762,24 @@ public class LumosChunkIlluminator
                     int num7 = ((num - 1) * num + j) * num + i;
                     worldChunk = chunks[num6];
                     lighting = chunks[num6].Lighting;
-                    tmpPosDimensionAware.Set(num3 + i, num6 * num + num - 1, num4 + j);
 
                     for (int num8 = num - 1; num8 >= 0; num8--)
                     {
-                        GetBlockAndAbsorption(worldChunk, num7, out Block block, out int lightAbsorptionAt);
-
-                        // Light travels from top to bottom
+                        // Позиция ставится ДО получения блока — теперь GetBlockAndAbsorption
+                        // тоже нужна корректная мировая позиция (для чизель-блоков).
                         tmpPosDimensionAware.Set(num3 + i, num6 * num + num8, num4 + j);
 
+                        GetBlockAndAbsorption(worldChunk, num7, tmpPosDimensionAware, out Block block, out int lightAbsorptionAt, out BlockEntityMicroBlock microBE);
+
+                        // Light travels from top to bottom
                         float effectiveAbs = GetEffectiveAbsorption(
-                            block, lightAbsorptionAt, BlockFacing.DOWN, num5, tmpPosDimensionAware);
+                            block, lightAbsorptionAt, BlockFacing.DOWN, num5, microBE, tmpPosDimensionAware);
 
                         if (effectiveAbs > num5)
                         {
-                            // маска солидности
-                            int solidMask = 0;
-                            if (block.SideSolid[0]) solidMask |= 1;
-                            if (block.SideSolid[1]) solidMask |= 2;
-                            if (block.SideSolid[2]) solidMask |= 4;
-                            if (block.SideSolid[3]) solidMask |= 8;
-                            if (block.SideSolid[4]) solidMask |= 16;
-                            if (block.SideSolid[5]) solidMask |= 32;
+                            // Единая маска солидности (учитывает чизель-блоки корректно)
+                            int solidMask = GetSolidMask(block, microBE);
 
-                            // ── Ступень 2: полный блок ──
                             if (solidMask == 63)
                                 lighting.SetSunlight(num7, num5); // чтобы листа не темнела у полных блоков
                             else
@@ -1868,27 +1929,30 @@ public class LumosChunkIlluminator
                         BlockFacing dir = blockFacing;
                         BlockFacing oppDir = dir.Opposite;
 
-                        GetBlockAndAbsorption(worldChunk2, index3d, out Block curBlock, out int curBaseAbs);
-
-                        tmpPosDimensionAware.Set(num4 + num9, num6 * num + array2[1], num4 + num10);
-                        GetBlockAndAbsorption(worldChunk, index3d2, out Block nBlock, out int nBaseAbs);
-
-                        // Ray from Current chunk to Neighbor chunk
+                        // Позиции ставим ДО получения блоков — обеим сторонам обмена
+                        // нужна корректная мировая позиция для чизель-блоков.
                         tmpPos2.Set(num2 + array2[0], num6 * num + array2[1], num3 + array2[2]);
                         tmpPos2.dimension = dimension;
-                        float absCurToN = GetEffectiveAbsorption(curBlock, curBaseAbs, dir, curLight, tmpPos2);
-                        int lightArrivingAtN = curLight - (int)absCurToN - 1;
+                        GetBlockAndAbsorption(worldChunk2, index3d, tmpPos2, out Block curBlock, out int curBaseAbs, out BlockEntityMicroBlock curMicroBE);
 
                         tmpPosDimensionAware.Set(num4 + num9, num6 * num + array2[1], num4 + num10);
+                        GetBlockAndAbsorption(worldChunk, index3d2, tmpPosDimensionAware, out Block nBlock, out int nBaseAbs, out BlockEntityMicroBlock nMicroBE);
+
+                        // Ray from Current chunk to Neighbor chunk
+                        float absCurToN = GetEffectiveAbsorption(curBlock, curBaseAbs, dir, curLight, curMicroBE, tmpPos2);
+                        int lightArrivingAtN = curLight - (int)absCurToN - 1;
+
                         float absNFromCur = GetEffectiveAbsorption(nBlock, nBaseAbs, dir, lightArrivingAtN,
-                            tmpPosDimensionAware);
+                            nMicroBE, tmpPosDimensionAware);
                         int finalLightToN = lightArrivingAtN;
                         if (absNFromCur > lightArrivingAtN) finalLightToN = 0;
 
                         // Ray from Neighbor chunk to Current chunk
-                        float absNToCur = GetEffectiveAbsorption(nBlock, nBaseAbs, oppDir, nLight);
+                        // (раньше сюда не передавалась позиция вообще — теперь передаём
+                        // уже добытые microBE/pos бесплатно, заодно чиним и этот путь).
+                        float absNToCur = GetEffectiveAbsorption(nBlock, nBaseAbs, oppDir, nLight, nMicroBE, tmpPosDimensionAware);
                         int lightArrivingAtCur = nLight - (int)absNToCur - 1;
-                        float absCurFromN = GetEffectiveAbsorption(curBlock, curBaseAbs, oppDir, lightArrivingAtCur);
+                        float absCurFromN = GetEffectiveAbsorption(curBlock, curBaseAbs, oppDir, lightArrivingAtCur, curMicroBE, tmpPos2);
                         int finalLightToCur = lightArrivingAtCur;
                         if (absCurFromN > lightArrivingAtCur) finalLightToCur = 0;
 
@@ -2003,7 +2067,7 @@ public class LumosChunkIlluminator
             tmpPos.Set(pos.X, pos.Y, pos.Z);
             tmpPos.dimension = pos.Dim;
 
-            GetBlockAndAbsorption(worldChunk, index3d, out Block posBlock, out int baseAbsorption);
+            GetBlockAndAbsorption(worldChunk, index3d, tmpPos, out Block posBlock, out int baseAbsorption, out BlockEntityMicroBlock posMicroBE);
             int currentLight = worldChunk.Lighting.GetSunlight(index3d);
 
             if (currentLight <= 0) continue;
@@ -2029,8 +2093,12 @@ public class LumosChunkIlluminator
                     int nIndex3d = ((ny & chunkSizeMask) * num + nlz) * num + nlx;
                     BlockFacing dir = BlockFacing.ALLFACES[i];
 
+                    // ВАЖНО: tmpPos принадлежит posBlock/posMicroBE и переиспользуется на
+                    // каждой из 6 итераций для GetEffectiveAbsorption ниже — поэтому, в
+                    // отличие от оригинала, он больше НЕ перезаписывается координатами
+                    // соседа (для соседа используется отдельный tmpPos2).
                     float effectiveAbs = GetEffectiveAbsorption(
-                        posBlock, baseAbsorption, dir, currentLight, tmpPos);
+                        posBlock, baseAbsorption, dir, currentLight, posMicroBE, tmpPos);
 
                     int newLight = currentLight - (int)effectiveAbs - 1;
 
@@ -2038,25 +2106,19 @@ public class LumosChunkIlluminator
                     if (newLight <= 0) continue;
 
                     // Absorption by the neighboring block
-                    GetBlockAndAbsorption(worldChunk, nIndex3d, out Block nBlock, out int nBaseAbs);
-                    tmpPos.Set(chunkX * num + nlx, ny, chunkZ * num + nlz);
                     tmpPos2.Set(chunkX * num + nlx, ny, chunkZ * num + nlz);
+                    GetBlockAndAbsorption(worldChunk, nIndex3d, tmpPos2, out Block nBlock, out int nBaseAbs, out BlockEntityMicroBlock nMicroBE);
 
                     float nEffectiveAbs = GetEffectiveAbsorption(
-                        nBlock, nBaseAbs, dir, newLight, tmpPos2);
+                        nBlock, nBaseAbs, dir, newLight, nMicroBE, tmpPos2);
 
                     int finalLight = newLight;
 
                     if (nEffectiveAbs > newLight)
                     {
-                        // маска солидности
-                        int solidMask = 0;
-                        if (nBlock.SideSolid[0]) solidMask |= 1;
-                        if (nBlock.SideSolid[1]) solidMask |= 2;
-                        if (nBlock.SideSolid[2]) solidMask |= 4;
-                        if (nBlock.SideSolid[3]) solidMask |= 8;
-                        if (nBlock.SideSolid[4]) solidMask |= 16;
-                        if (nBlock.SideSolid[5]) solidMask |= 32;
+                        // Единая маска солидности (учитывает чизель-блоки корректно,
+                        // вместо блока.SideSolid, который у них всегда пуст).
+                        int solidMask = GetSolidMask(nBlock, nMicroBE);
 
                         // ── Ступень 2: не полный блок ──
                         if (solidMask != 63) // чтобы листва не темнела у полных блоков
@@ -2085,8 +2147,8 @@ public class LumosChunkIlluminator
 
         if (!substractAbsorb) return unpackedChunkFast.Lighting.GetSunlight(index3d);
 
-        GetBlockAndAbsorption(unpackedChunkFast, index3d, out _, out int abs);
         tmpPos.Set(posX, posY, posZ);
+        GetBlockAndAbsorption(unpackedChunkFast, index3d, tmpPos, out _, out int abs, out _);
         return unpackedChunkFast.Lighting.GetSunlight(index3d) - abs;
     }
 
@@ -2207,11 +2269,11 @@ public class LumosChunkIlluminator
             int index3d = (posY % num * num + posZ % num) * num + posX % num;
             int sunlight = unpackedChunkFast.Lighting.GetSunlight(index3d);
 
-            GetBlockAndAbsorption(unpackedChunkFast, index3d, out Block block, out int baseAbs);
             tmpDiPos.Set(posX, posY, posZ);
+            GetBlockAndAbsorption(unpackedChunkFast, index3d, tmpDiPos, out Block block, out int baseAbs, out BlockEntityMicroBlock microBE);
 
             // Light falls from top to bottom through this block
-            num2 += (int)GetEffectiveAbsorption(block, baseAbs, BlockFacing.DOWN, defaultSunLight - num2);
+            num2 += (int)GetEffectiveAbsorption(block, baseAbs, BlockFacing.DOWN, defaultSunLight - num2, microBE, tmpDiPos);
 
             if (defaultSunLight - num2 < num3) return false;
             if (sunlight == defaultSunLight) return true;
@@ -2245,8 +2307,8 @@ public class LumosChunkIlluminator
             int index3d = (num5 % num * num + num6 % num) * num + num4 % num;
             unpackedChunkFast.Lighting.SetSunlight_Buffered(index3d, num3);
 
-            GetBlockAndAbsorption(unpackedChunkFast, index3d, out Block curBlock, out int baseAbsorption);
             tmpPos.Set(num4, num5, num6);
+            GetBlockAndAbsorption(unpackedChunkFast, index3d, tmpPos, out Block curBlock, out int baseAbsorption, out BlockEntityMicroBlock curMicroBE);
 
             int num7 = ((num2 >> 29) & 7) - 1;
 
@@ -2269,16 +2331,17 @@ public class LumosChunkIlluminator
                     index3d = (num9 % num * num + num10 % num) * num + num8 % num;
                     BlockFacing dir = BlockFacing.ALLFACES[i];
 
-                    float effectiveAbs = GetEffectiveAbsorption(curBlock, baseAbsorption, dir, num3);
+                    float effectiveAbs = GetEffectiveAbsorption(curBlock, baseAbsorption, dir, num3, curMicroBE, tmpPos);
                     int distLoss = ((!isDirectlyIlluminated || num8 != centerPos.X || num10 != centerPos.Z || i != 5) ? 1 : 0);
                     int lightArrivingAtN = num3 - (int)effectiveAbs - distLoss;
 
                     if (lightArrivingAtN <= 0) continue;
 
-                    GetBlockAndAbsorption(unpackedChunkFast, index3d, out Block nBlock, out int nBaseAbs);
-                    tmpPos.Set(num8, num9, num10);
+                    tmpPos2.Set(num8, num9, num10);
+                    tmpPos2.dimension = centerPos.dimension;
+                    GetBlockAndAbsorption(unpackedChunkFast, index3d, tmpPos2, out Block nBlock, out int nBaseAbs, out BlockEntityMicroBlock nMicroBE);
 
-                    float nEffectiveAbs = GetEffectiveAbsorption(nBlock, nBaseAbs, dir, lightArrivingAtN);
+                    float nEffectiveAbs = GetEffectiveAbsorption(nBlock, nBaseAbs, dir, lightArrivingAtN, nMicroBE, tmpPos2);
 
                     int finalLight = lightArrivingAtN;
                     if (nEffectiveAbs > lightArrivingAtN) finalLight = 0;
@@ -2319,8 +2382,8 @@ public class LumosChunkIlluminator
 
             unpackedChunkFast.Lighting.SetSunlight_Buffered(index3d, 0);
 
-            GetBlockAndAbsorption(unpackedChunkFast, index3d, out Block curBlock, out int baseAbsorption);
             tmpPos.Set(num3, num4, num5);
+            GetBlockAndAbsorption(unpackedChunkFast, index3d, tmpPos, out Block curBlock, out int baseAbsorption, out BlockEntityMicroBlock curMicroBE);
 
             int num7 = ((num2 >> 29) & 7) - 1;
 
@@ -2341,7 +2404,7 @@ public class LumosChunkIlluminator
                 touchedChunks.Add(chunkProvider.ChunkIndex3D(num8 / num, num9 / num + centerPos.dimension * 1024, num10 / num));
 
                 BlockFacing dir = BlockFacing.ALLFACES[i];
-                float effectiveAbs = GetEffectiveAbsorption(curBlock, baseAbsorption, dir, (num2 >> 24) & 0x1F);
+                float effectiveAbs = GetEffectiveAbsorption(curBlock, baseAbsorption, dir, (num2 >> 24) & 0x1F, curMicroBE, tmpPos);
                 int distLoss = 1 - ((isDirectlyIlluminated && num8 == centerPos.X && num10 == centerPos.Z && i == 5) ? 1 : 0);
                 int num11 = ((num2 >> 24) & 0x1F) - (int)effectiveAbs - distLoss;
 
@@ -2362,5 +2425,5 @@ public class LumosChunkIlluminator
         tmpPos.SetDimension(0);
     }
 
-    
+
 }
