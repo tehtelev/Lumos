@@ -1,14 +1,9 @@
-﻿using Lumos.Patches;
-using HarmonyLib;
+﻿using HarmonyLib;
+using Lumos.Core;
+using Lumos.Patches;
 using System;
-using System.Collections.Generic;
-using System.Linq;
+
 using Vintagestory.API.Common;
-using Vintagestory.API.Common.Entities;
-using Vintagestory.API.Config;
-using Vintagestory.API.MathTools;
-using Vintagestory.API.Server;
-using Vintagestory.GameContent;
 
 
 [assembly: ModDependency("game", "1.22.0")]
@@ -17,7 +12,7 @@ using Vintagestory.GameContent;
     "lumos",
     Website = "https://github.com/tehtelev/Lumos",
     Description = "Reworking the game's lighting system and fixing related bugs",
-    Version = "0.0.2",
+    Version = "1.0.1",
     Authors = new[] { "Tehtelev"}
 )]
 
@@ -68,7 +63,11 @@ public class LumosMod : ModSystem
     /// </summary>
     public override void Dispose()
     {
+        MicroblockLightCache.Clear();
+
         _harmony?.UnpatchAll("lumos");
         _harmony = null;
+
+        
     }
 }
