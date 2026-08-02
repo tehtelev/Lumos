@@ -736,9 +736,9 @@ public class LumosChunkIlluminator
 
             float effectiveAbs = GetEffectiveAbsorption(
                 block, baseAbsorption, hitFace, energy, microBE, tmpPos);
+
             if (effectiveAbs > 0f)
                 energy -= effectiveAbs;
-
 
             bool isOpaque;
             int solidMask = GetSolidMask(block, microBE);   // ← передавайте microBE!
@@ -758,16 +758,26 @@ public class LumosChunkIlluminator
             // ПРИМЕНЕНИЕ СВЕТА
             if (energy > 0f)
             {
+
                 // Луч ещё жив — ставим свет в текущий блок
                 ApplyLightToBlock(x, y, z, energy, ray.SourceId);
             }
-            else if (energyAtSurface > 0f && solidMask == 63)
+            else if (energyAtSurface > 0f)
             {
-                // Поглощение убило энергию, но блок полностью твёрдый.
-                // Ставим «поверхностный» свет (аналог sunlight solidMask==63).
-                // Используем энергию ДО поглощения, иначе будет 0.
-                ApplyLightToBlock(x, y, z, energyAtSurface, ray.SourceId);
+                if (microBE!=null)
+                    ApplyLightToBlock(x, y, z, energyAtSurface, ray.SourceId);
+                else
+                {
+                    // Поглощение убило энергию, но блок полностью твёрдый.
+                    // Ставим «поверхностный» свет (аналог sunlight solidMask==63).
+                    // Используем энергию ДО поглощения, иначе будет 0.
+                    if (solidMask == 63)
+                        ApplyLightToBlock(x, y, z, energyAtSurface, ray.SourceId);
+                }
             }
+
+
+
 
             // Single-bounce reflection (scaled by volume fraction for microblocks)
             if (ray.BounceCount == 0 && effectiveAbs > 0)
@@ -1939,8 +1949,10 @@ public class LumosChunkIlluminator
                         int solidMask = GetSolidMask(nBlock, nMicroBE);
 
                         // Non-full blocks go dark; full blocks keep surface light
-                        if (solidMask != 63)
+                        if (solidMask != 63 && nMicroBE == null)
                             finalLight = 0;
+
+
                     }
 
                     if (worldChunk.Lighting.GetSunlight(nIndex3d) < finalLight)
