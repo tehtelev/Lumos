@@ -751,9 +751,7 @@ public class LumosChunkIlluminator
             {
                 isOpaque = effectiveAbs > 0 && (
                     (solidMask & (1 << hitFace.Index)) != 0 ||
-                    (solidMask & (1 << hitFace.Opposite.Index)) != 0 ||
-                    block.IsLiquid() ||
-                    block.Replaceable >= 6000
+                    (solidMask & (1 << hitFace.Opposite.Index)) != 0
                 );
             }
 
