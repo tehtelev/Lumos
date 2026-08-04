@@ -12,7 +12,7 @@ using Vintagestory.API.Common;
     "lumos",
     Website = "https://github.com/tehtelev/Lumos",
     Description = "Reworking the game's lighting system and fixing related bugs",
-    Version = "1.0.2",
+    Version = "1.0.3",
     Authors = new[] { "Tehtelev"}
 )]
 
@@ -63,11 +63,17 @@ public class LumosMod : ModSystem
     /// </summary>
     public override void Dispose()
     {
+        // 1. Очищаем статические кэши осветителя (сферы Фибоначчи)
+        LumosChunkIlluminator.ClearStaticCaches();
+
+        // 2. Очищаем кэш профилей микроблоков
         MicroblockLightCache.Clear();
 
+        // 3. Снимаем все Harmony-патчи, чтобы игра работала как раньше
         _harmony?.UnpatchAll("lumos");
         _harmony = null;
 
-        
+        base.Dispose();
+
     }
 }
