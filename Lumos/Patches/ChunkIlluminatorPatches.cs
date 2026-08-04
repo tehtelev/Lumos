@@ -236,6 +236,8 @@ public static class ChunkIlluminatorPatches
         }
     }
 
+
+
     [HarmonyPatch(
         typeof(ServerSystemRelight),
         nameof(ServerSystemRelight.ProcessLightingQueue)
@@ -245,8 +247,7 @@ public static class ChunkIlluminatorPatches
         static void Postfix(
             ServerSystemRelight __instance)
         {
-            if (__instance.chunkIlluminator == null)
-                return;
+            if (__instance.chunkIlluminator == null) return;
 
             if (!LumosStateHolder.TryGet(
                     __instance.chunkIlluminator,
@@ -255,35 +256,32 @@ public static class ChunkIlluminatorPatches
                 return;
             }
 
-            lumos.FlushPendingBlockLightUpdates();
+            lumos.FlushPendingLightUpdates(); 
         }
     }
-
 
 }
 
 
 
-
-
-/// <summary>
-/// Client-side integration for Lumos batched block-light updates.
-///
-/// IMPORTANT:
-/// We must intercept ProcessLightingTask itself, not only ProcessLightingQueue.
-/// Vanilla ProcessLightingTask calls WorldMap.SetChunkDirty() BEFORE our batched
-/// Lumos flush would normally run. That creates a race:
-///
-///     SetChunkDirty(old lighting)
-///             -> Lumos changes lighting
-///             -> client mesh rebuild may already be queued with old values
-///
-/// Therefore this patch completely replaces the vanilla ProcessLightingTask.
-/// It performs the same lighting operations, but defers all client chunk-dirty
-/// notifications until the entire lighting-task queue has been drained and the
-/// Lumos batch has been flushed.
-/// </summary>
-public static class ClientSystemRelightPatches
+    /// <summary>
+    /// Client-side integration for Lumos batched block-light updates.
+    ///
+    /// IMPORTANT:
+    /// We must intercept ProcessLightingTask itself, not only ProcessLightingQueue.
+    /// Vanilla ProcessLightingTask calls WorldMap.SetChunkDirty() BEFORE our batched
+    /// Lumos flush would normally run. That creates a race:
+    ///
+    ///     SetChunkDirty(old lighting)
+    ///             -> Lumos changes lighting
+    ///             -> client mesh rebuild may already be queued with old values
+    ///
+    /// Therefore this patch completely replaces the vanilla ProcessLightingTask.
+    /// It performs the same lighting operations, but defers all client chunk-dirty
+    /// notifications until the entire lighting-task queue has been drained and the
+    /// Lumos batch has been flushed.
+    /// </summary>
+    public static class ClientSystemRelightPatches
 {
     private sealed class BatchState
     {
@@ -703,20 +701,14 @@ public static class ClientSystemRelightPatches
                 return;
             }
 
-            BatchState state =
-                GetState(__instance);
+            BatchState state = GetState(__instance);
 
             // The actual light calculation happens now, after ALL tasks
             // from the current queue drain have been collected.
-            FastSetOfLongs touchedChunks =
-                lumos.FlushPendingBlockLightUpdates();
+            FastSetOfLongs touchedChunks = lumos.FlushPendingLightUpdates(); // <--- ИЗМЕНЕНО ЗДЕСЬ
 
             // Any chunk whose lighting array changed gets a full rebuild.
-            AddReturnedChunks(
-                state,
-                touchedChunks,
-                true
-            );
+            AddReturnedChunks(state, touchedChunks, true);
 
             // Now, and only now, tell the client renderer that the data changed.
             foreach (

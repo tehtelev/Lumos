@@ -1027,7 +1027,7 @@ public class LumosChunkIlluminator
 
         QueueDirtyLightSphere(posX, posY, posZ, range);
 
-        FastSetOfLongs flushedChunks = FlushPendingBlockLightUpdates();
+        FastSetOfLongs flushedChunks = FlushPendingLightUpdates();
 
         foreach (long chunkIndex in flushedChunks)
             touchedChunks.Add(chunkIndex);
@@ -1870,7 +1870,7 @@ public class LumosChunkIlluminator
             QueueDirtyLightSphere(x, y, z, hsv[2]);
         }
 
-        FlushPendingBlockLightUpdates();
+        FlushPendingLightUpdates();
     }
 
     /// <summary>
@@ -1986,10 +1986,20 @@ public class LumosChunkIlluminator
         return unpackedChunkFast.Lighting.GetSunlight(index3d) - abs;
     }
 
+    // ─── Dirty-batching internals ───────────────────────────────────────────
+
+    /// <summary>Очередь обновлений солнечного света:_PACKED_COLUMN_KEY -> max startChunkY</summary>
+    private readonly Dictionary<long, int> pendingSunlightUpdates = new Dictionary<long, int>(64);
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static long PackColumn(int cx, int cz, int dim)
+    {
+        return ((long)(cx & 0x1FFFFF)) | ((long)(cz & 0x1FFFFF) << 21) | ((long)(dim & 0x3FF) << 42);
+    }
+
     /// <summary>
     /// Updates sunlight when a block's transparency changes.
-    /// Recalculates a cross of 5 chunk columns from posY downward.
-    /// Sunlight above the changed block remains untouched.
+    /// NOW DEFERRED: Just queues the column for batch processing at the end of the tick.
     /// </summary>
     public FastSetOfLongs UpdateSunLight(
         int posX, int posY, int posZ, int oldAbsorb, int newAbsorb)
@@ -2001,21 +2011,12 @@ public class LumosChunkIlluminator
             posX >= mapsizex || posY >= mapsizey || posZ >= mapsizez)
             return touchedChunks;
 
-        int num = chunkSize;
         int chunkX = posX >> chunkSizeLog2;
         int chunkZ = posZ >> chunkSizeLog2;
-
         int dim = posY / 32768;
-        int dimOffset = dim * 1024;
+        int chunkY = posY >> chunkSizeLog2;
 
-        int chunksPerColumn = mapsizey / num;
-
-        // Only recalculate from this chunk downward
-        int startChunkY = posY >> chunkSizeLog2;
-
-        // Gather 5 columns (cross: center + N/S/E/W)
-        var columns = new List<(int cx, int cz, IWorldChunk[] chunks)>(5);
-
+        // Queue the center column and 4 neighbors
         for (int dx = -1; dx <= 1; dx++)
         {
             for (int dz = -1; dz <= 1; dz++)
@@ -2025,30 +2026,74 @@ public class LumosChunkIlluminator
                 int cx = chunkX + dx;
                 int cz = chunkZ + dz;
 
-                if (cx < 0 || cz < 0 || cx * num >= mapsizex || cz * num >= mapsizez)
+                if (cx < 0 || cz < 0 || cx * chunkSize >= mapsizex || cz * chunkSize >= mapsizez)
                     continue;
 
-                IWorldChunk[] chunks = new IWorldChunk[chunksPerColumn];
-                bool allLoaded = true;
-
-                for (int cy = 0; cy < chunksPerColumn; cy++)
+                long key = PackColumn(cx, cz, dim);
+                if (!pendingSunlightUpdates.TryGetValue(key, out int maxY) || chunkY > maxY)
                 {
-                    chunks[cy] = chunkProvider.GetChunk(cx, cy + dimOffset, cz);
-                    if (chunks[cy] == null) { allLoaded = false; break; }
-                    chunks[cy].Unpack();
+                    pendingSunlightUpdates[key] = chunkY;
                 }
-
-                if (allLoaded)
-                    columns.Add((cx, cz, chunks));
             }
         }
 
-        if (columns.Count == 0) return touchedChunks;
+        return touchedChunks; // Возвращаем пустоту, реальные чанки уйдут во время Flush
+    }
+
+    /// <summary>
+    /// Calculates and commits one complete sunlight batch.
+    /// </summary>
+    public FastSetOfLongs FlushPendingSunLightUpdates()
+    {
+        FastSetOfLongs touchedChunks = new FastSetOfLongs();
+        if (pendingSunlightUpdates.Count == 0) return touchedChunks;
+
+        var updates = new Dictionary<long, int>(pendingSunlightUpdates);
+        pendingSunlightUpdates.Clear();
+
+        int num = chunkSize;
+        int chunksPerColumn = mapsizey / num;
+
+        var validColumns = new List<(int cx, int cz, int dim, int startChunkY, IWorldChunk[] chunks)>();
+
+        foreach (var kvp in updates)
+        {
+            long key = kvp.Key;
+            int startChunkY = kvp.Value;
+
+            int cx = (int)(key & 0x1FFFFF);
+            int cz = (int)((key >> 21) & 0x1FFFFF);
+            int dim = (int)((key >> 42) & 0x3FF);
+
+            if ((cx & 0x100000) != 0) cx |= unchecked((int)0xFFE00000);
+            if ((cz & 0x100000) != 0) cz |= unchecked((int)0xFFE00000);
+            if ((dim & 0x200) != 0) dim |= unchecked((int)0xFFFFFC00);
+
+            int dimOffset = dim * 1024;
+
+            IWorldChunk[] chunks = new IWorldChunk[chunksPerColumn];
+            bool allLoaded = true;
+
+            for (int cy = 0; cy < chunksPerColumn; cy++)
+            {
+                chunks[cy] = chunkProvider.GetChunk(cx, cy + dimOffset, cz);
+                if (chunks[cy] == null) { allLoaded = false; break; }
+                chunks[cy].Unpack();
+            }
+
+            if (allLoaded)
+            {
+                validColumns.Add((cx, cz, dim, startChunkY, chunks));
+            }
+        }
+
+        if (validColumns.Count == 0)
+            return touchedChunks;
 
         int totalBlocks = num * num * num;
 
         // Pass 1: extinguish + direct light + horizontal flood
-        foreach (var (cx, cz, chunks) in columns)
+        foreach (var (cx, cz, dim, startChunkY, chunks) in validColumns)
         {
             for (int cy = startChunkY; cy >= 0; cy--)
             {
@@ -2062,10 +2107,11 @@ public class LumosChunkIlluminator
         }
 
         // Pass 2: boundary exchange + mark modified
-        foreach (var (cx, cz, chunks) in columns)
+        foreach (var (cx, cz, dim, startChunkY, chunks) in validColumns)
         {
             SunLightFloodNeighbourChunks(chunks, cx, startChunkY, cz, dim);
 
+            int dimOffset = dim * 1024;
             for (int cy = startChunkY; cy >= 0; cy--)
             {
                 touchedChunks.Add(chunkProvider.ChunkIndex3D(cx, cy + dimOffset, cz));
@@ -2073,6 +2119,17 @@ public class LumosChunkIlluminator
             }
         }
 
+        return touchedChunks;
+    }
+
+    /// <summary>
+    /// Обёртка, которая сбрасывает и блочный, и солнечный свет одной пачкой.
+    /// </summary>
+    public FastSetOfLongs FlushPendingLightUpdates()
+    {
+        FastSetOfLongs touchedChunks = FlushPendingBlockLightUpdates();
+        FastSetOfLongs sunTouched = FlushPendingSunLightUpdates();
+        foreach (long chunk in sunTouched) touchedChunks.Add(chunk);
         return touchedChunks;
     }
 
