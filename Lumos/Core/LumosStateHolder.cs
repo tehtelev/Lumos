@@ -1,4 +1,5 @@
 ﻿using HarmonyLib;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 using Vintagestory.API.Common;
@@ -10,15 +11,14 @@ namespace Lumos.Core;
 /// <summary>
 /// Связывает каждый ванильный ChunkIlluminator с его LumosChunkIlluminator.
 /// Создание происходит лениво — при первом вызове любого пропатченного метода.
-/// Это решает проблему тайминга: ванильные ChunkIlluminator создаются ДО загрузки мода,
-/// но наши LumosChunkIlluminator создаются при первом использовании.
 /// </summary>
 public static class LumosStateHolder
 {
     private static readonly ConditionalWeakTable<ChunkIlluminator, LumosChunkIlluminator> _map = new();
 
-    // Кэшированные FieldInfo для чтения приватных полей ванильного ChunkIlluminator.
-    // Инициализируются один раз при загрузке класса (статический конструктор).
+    /// <summary>Маппинг IBlockAccessor -> ChunkIlluminator для внешних триггеров (двери и т.п.).</summary>
+    private static readonly ConcurrentDictionary<IBlockAccessor, ChunkIlluminator> _blockAccessMap = new();
+
     private static readonly System.Reflection.FieldInfo _fChunkProvider;
     private static readonly System.Reflection.FieldInfo _fReadBlockAccess;
     private static readonly System.Reflection.FieldInfo _fChunkSize;
@@ -41,44 +41,41 @@ public static class LumosStateHolder
         _fMapSizeZ = AccessTools.Field(t, "mapsizez");
     }
 
-    /// <summary>
-    /// Возвращает LumosChunkIlluminator для данного ванильного инстанса.
-    /// Если его ещё нет — создаёт и инициализирует через reflection.
-    /// Потокобезопасно: ConditionalWeakTable.GetValue атомарен.
-    /// </summary>
+    public static void RegisterBlockAccessor(IBlockAccessor blockAccess, ChunkIlluminator illuminator)
+    {
+        if (blockAccess != null && illuminator != null)
+            _blockAccessMap.TryAdd(blockAccess, illuminator);
+    }
+
+    public static LumosChunkIlluminator GetByBlockAccessor(IBlockAccessor blockAccess)
+    {
+        if (blockAccess != null && _blockAccessMap.TryGetValue(blockAccess, out var vanilla))
+            return GetOrCreate(vanilla);
+        return null;
+    }
+
+    /// <summary>Возвращает LumosChunkIlluminator для данного ванильного инстанса, создавая при необходимости.</summary>
     public static LumosChunkIlluminator GetOrCreate(ChunkIlluminator vanilla)
     {
         return _map.GetValue(vanilla, CreateLumos);
     }
 
-    /// <summary>
-    /// Пробует получить LumosChunkIlluminator без создания.
-    /// Возвращает false, если инстанс ещё не был создан через GetOrCreate.
-    /// </summary>
+    /// <summary>Пробует получить без создания.</summary>
     public static bool TryGet(ChunkIlluminator vanilla, out LumosChunkIlluminator lumos)
     {
         return _map.TryGetValue(vanilla, out lumos);
     }
 
-
-    /// <summary>
-    /// Фабрика: создаёт LumosChunkIlluminator и копирует все поля из ванильного инстанса.
-    /// Вызывается один раз на каждый ChunkIlluminator.
-    /// </summary>
     private static LumosChunkIlluminator CreateLumos(ChunkIlluminator vanilla)
     {
         var lumos = new LumosChunkIlluminator();
 
-        // 1. Читаем параметры конструктора
         var chunkProvider = (IChunkProvider)_fChunkProvider.GetValue(vanilla);
         var readBlockAccess = (IBlockAccessor)_fReadBlockAccess.GetValue(vanilla);
         var chunkSize = (int)_fChunkSize.GetValue(vanilla);
 
         lumos.InitFromVanillaConstructor(chunkProvider, readBlockAccess, chunkSize);
 
-        // 2. Читаем параметры InitForWorld (могут быть ещё не установлены,
-        //    если lazy init сработал очень рано — но на практике InitForWorld
-        //    всегда вызывается до первого Sunlight/PlaceBlockLight)
         var blockTypes = (IList<Block>)_fBlockTypes.GetValue(vanilla);
         if (blockTypes != null)
         {

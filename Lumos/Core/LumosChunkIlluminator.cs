@@ -2,6 +2,7 @@
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
+using System.Threading;
 using Vintagestory.API.Client.Tesselation;
 using Vintagestory.API.Common;
 using Vintagestory.API.Datastructures;
@@ -129,33 +130,54 @@ public class LumosChunkIlluminator
     /// Для обычных блоков использует статический Block.SideSolid.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private int GetSolidMask(Block block, BlockEntityMicroBlock microBE)
+    private int GetSolidMask(Block block, BlockEntityMicroBlock microBE, BlockPos pos)
     {
         if (microBE != null)
         {
-            MicroblockLightProfile profile =
-                MicroblockLightCache.GetOrCompute(microBE, blockTypes);
-
+            MicroblockLightProfile profile = MicroblockLightCache.GetOrCompute(microBE, blockTypes);
             int mask = 0;
-            // Грань считается "почти твердой", если открытость < 25% (64/255)
-            if (profile.FaceOpenness0 < 64) mask |= 1;  // N
-            if (profile.FaceOpenness1 < 64) mask |= 2;  // E
-            if (profile.FaceOpenness2 < 64) mask |= 4;  // S
-            if (profile.FaceOpenness3 < 64) mask |= 8;  // W
-            if (profile.FaceOpenness4 < 64) mask |= 16; // U
-            if (profile.FaceOpenness5 < 64) mask |= 32; // D
+            if (profile.FaceOpenness0 < 64) mask |= 1;
+            if (profile.FaceOpenness1 < 64) mask |= 2;
+            if (profile.FaceOpenness2 < 64) mask |= 4;
+            if (profile.FaceOpenness3 < 64) mask |= 8;
+            if (profile.FaceOpenness4 < 64) mask |= 16;
+            if (profile.FaceOpenness5 < 64) mask |= 32;
             return mask;
         }
 
+        if (pos != null && readBlockAccess != null)
+        {
+            bool opened;
+            if (IsDoorBlock(block, pos, out opened))
+            {
+                return opened ? 0 : 63;
+            }
+        }
+
         int m = 0;
-        if (block.SideSolid[0]) m |= 1;
-        if (block.SideSolid[1]) m |= 2;
-        if (block.SideSolid[2]) m |= 4;
-        if (block.SideSolid[3]) m |= 8;
-        if (block.SideSolid[4]) m |= 16;
-        if (block.SideSolid[5]) m |= 32;
+        if (pos != null && readBlockAccess != null)
+        {
+            if (block.SideIsSolid(readBlockAccess, pos, 0)) m |= 1;
+            if (block.SideIsSolid(readBlockAccess, pos, 1)) m |= 2;
+            if (block.SideIsSolid(readBlockAccess, pos, 2)) m |= 4;
+            if (block.SideIsSolid(readBlockAccess, pos, 3)) m |= 8;
+            if (block.SideIsSolid(readBlockAccess, pos, 4)) m |= 16;
+            if (block.SideIsSolid(readBlockAccess, pos, 5)) m |= 32;
+        }
+        else
+        {
+            if (block.SideSolid[0]) m |= 1;
+            if (block.SideSolid[1]) m |= 2;
+            if (block.SideSolid[2]) m |= 4;
+            if (block.SideSolid[3]) m |= 8;
+            if (block.SideSolid[4]) m |= 16;
+            if (block.SideSolid[5]) m |= 32;
+        }
         return m;
     }
+
+
+
 
 
     // ─── Стейджинг солнечного света (предотвращает мерцание рендера) ─────
@@ -656,6 +678,136 @@ public class LumosChunkIlluminator
         return 50;
     }
 
+
+    /// <summary>
+    /// Проверяет, пересекает ли заданный отрезок [start, end] хотя бы один
+    /// CollisionBox блока. Устойчив к лучам, параллельным осям координат.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private bool SegmentHitsCollisionBoxes(
+     Block block, BlockPos pos,
+     float startX, float startY, float startZ,
+     float endX, float endY, float endZ)
+    {
+        Cuboidf[] boxes;
+
+        if (block is BlockMultiblock mb)
+        {
+            BlockPos mainPos = pos.AddCopy(mb.OffsetInv);
+            Block mainBlock = readBlockAccess.GetBlock(mainPos);
+            if (mainBlock == null) return false;
+
+            // Официальный ванильный API мультиблоков: возвращает форму части
+            // в локальных координатах относительно САМОЙ части (pos),
+            // и null для ячеек, где двери физически нет (широкие/открытые).
+            boxes = null;
+            if (mainBlock.BlockBehaviors != null)
+            {
+                foreach (BlockBehavior bh in mainBlock.BlockBehaviors)
+                {
+                    if (bh is IMultiBlockColSelBoxes mbc)
+                    {
+                        boxes = mbc.MBGetCollisionBoxes(readBlockAccess, pos, mb.OffsetInv);
+                        break;
+                    }
+                }
+            }
+
+            if (boxes == null)
+                boxes = mainBlock.GetCollisionBoxes(readBlockAccess, mainPos);
+        }
+        else
+        {
+            boxes = block.GetCollisionBoxes(readBlockAccess, pos);
+        }
+
+        if (boxes == null || boxes.Length == 0) return false;
+
+        float dx = endX - startX;
+        float dy = endY - startY;
+        float dz = endZ - startZ;
+
+        // якорим боксы к ТЕКУЩЕМУ вокселю, а не к главному блоку!
+        int bx = pos.X;
+        int by = pos.Y;
+        int bz = pos.Z;
+
+        const float EPS = 1e-4f;
+
+        for (int i = 0; i < boxes.Length; i++)
+        {
+            Cuboidf box = boxes[i];
+            float minX = bx + box.X1;
+            float maxX = bx + box.X2;
+            float minY = by + box.Y1;
+            float maxY = by + box.Y2;
+            float minZ = bz + box.Z1;
+            float maxZ = bz + box.Z2;
+
+            float tMin = 0f;
+            float tMax = 1f;
+            bool hit = true;
+
+            // X-ось
+            if (Math.Abs(dx) < 1e-8f)
+            {
+                if (startX < minX - EPS || startX > maxX + EPS) hit = false;
+            }
+            else
+            {
+                float invD = 1f / dx;
+                float t1 = (minX - startX) * invD;
+                float t2 = (maxX - startX) * invD;
+                if (t1 > t2) { float tmp = t1; t1 = t2; t2 = tmp; }
+                if (t1 > tMin) tMin = t1;
+                if (t2 < tMax) tMax = t2;
+                if (tMin > tMax) hit = false;
+            }
+
+            if (hit)
+            {
+                // Y-ось
+                if (Math.Abs(dy) < 1e-8f)
+                {
+                    if (startY < minY - EPS || startY > maxY + EPS) hit = false;
+                }
+                else
+                {
+                    float invD = 1f / dy;
+                    float t1 = (minY - startY) * invD;
+                    float t2 = (maxY - startY) * invD;
+                    if (t1 > t2) { float tmp = t1; t1 = t2; t2 = tmp; }
+                    if (t1 > tMin) tMin = t1;
+                    if (t2 < tMax) tMax = t2;
+                    if (tMin > tMax) hit = false;
+                }
+            }
+
+            if (hit)
+            {
+                // Z-ось
+                if (Math.Abs(dz) < 1e-8f)
+                {
+                    if (startZ < minZ - EPS || startZ > maxZ + EPS) hit = false;
+                }
+                else
+                {
+                    float invD = 1f / dz;
+                    float t1 = (minZ - startZ) * invD;
+                    float t2 = (maxZ - startZ) * invD;
+                    if (t1 > t2) { float tmp = t1; t1 = t2; t2 = tmp; }
+                    if (t1 > tMin) tMin = t1;
+                    if (t2 < tMax) tMax = t2;
+                    if (tMin > tMax) hit = false;
+                }
+            }
+
+            if (hit) return true;
+        }
+
+        return false;
+    }
+
     /// <summary>
     /// DDA-марш луча: проходит луч через воксельную сетку, применяя свет,
     /// поглощение и опциональные однократные отражения.
@@ -727,7 +879,12 @@ public class LumosChunkIlluminator
 
             float nextDistance = tNext;
             float stepDistance = nextDistance - prevDistance;
+
+
+
+            // безопасно обновляем prevDistance для следующей итерации DDA
             prevDistance = nextDistance;
+
             if (stepDistance < 0f) break;
 
             // Запрашиваем чанк только тогда, когда координата чанка фактически меняется
@@ -764,68 +921,124 @@ public class LumosChunkIlluminator
             if (effectiveAbs > 0f)
                 energy -= effectiveAbs;
 
-            bool isOpaque;
-            int solidMask = GetSolidMask(block, microBE); // передаем microBE для корректной маски!
 
+            int solidMask = GetSolidMask(block, microBE, tmpPos);
+
+
+            //if (tmpPos.X == 511732 && tmpPos.Y == 116 && tmpPos.Z == 512067)
+            //    tmpPos = tmpPos;
+
+            //if (block.Code.Path.ToString().Contains("slab") && tmpPos.Z == 511921)
+            //{
+            //    tmpPos = tmpPos;
+            //}
+
+            bool isOpaque;
             if (microBE != null)
             {
                 isOpaque = false;
             }
             else
             {
-                isOpaque = effectiveAbs > 0 && (
-                    (solidMask & (1 << hitFace.Index)) != 0 ||
-                    (solidMask & (1 << hitFace.Opposite.Index)) != 0
-                );
+                // Правильное определение дверей (включая мультиблоки)
+                bool isDoor = block.GetBehavior<BlockBehaviorDoor>() != null ||
+                              block.GetBehavior<BlockBehaviorTrapDoor>() != null;
+
+                // Если это прокси-блок мультиблока, проверяем главный блок
+                if (!isDoor && block is BlockMultiblock mb)
+                {
+                    BlockPos mainPos = tmpPos.AddCopy(mb.OffsetInv);
+                    Block mainBlock = readBlockAccess.GetBlock(mainPos);
+                    if (mainBlock.GetBehavior<BlockBehaviorDoor>() != null ||
+                        mainBlock.GetBehavior<BlockBehaviorTrapDoor>() != null)
+                    {
+                        isDoor = true;
+                    }
+                }
+
+                if (isDoor)
+                {
+                    float segStart = nextDistance;
+                    float segEnd = Math.Min(tMaxX, Math.Min(tMaxY, tMaxZ));
+                    if (segEnd < segStart) segEnd = segStart;
+
+                    float startX = posX + dirX * segStart;
+                    float startY = posY + dirY * segStart;
+                    float startZ = posZ + dirZ * segStart;
+                    float endX = posX + dirX * segEnd;
+                    float endY = posY + dirY * segEnd;
+                    float endZ = posZ + dirZ * segEnd;
+
+                    isOpaque = SegmentHitsCollisionBoxes(block, tmpPos,
+                        startX, startY, startZ, endX, endY, endZ);
+                }
+                else
+                {
+                    // Обычные блоки используют быструю маску
+                    isOpaque = effectiveAbs > 32 && (
+                        (solidMask & (1 << hitFace.Index)) != 0 ||
+                        (solidMask & (1 << hitFace.Opposite.Index)) != 0
+                    );
+                }
             }
 
             // ПРИМЕНЕНИЕ СВЕТА
             if (energy > 0f)
             {
-                // Луч ещё жив — ставим свет в текущий блок
                 ApplyLightToBlock(x, y, z, energy, ray.SourceId);
             }
             else if (energyAtSurface > 0f)
             {
-                if (microBE != null)
-                    ApplyLightToBlock(x, y, z, energyAtSurface, ray.SourceId);
-                else
-                {
-                    // Поглощение убило энергию, но блок полностью твёрдый.
-                    // Ставим «поверхностный» свет (аналог sunlight solidMask==63).
-                    // Используем энергию ДО поглощения, иначе будет 0.
-                    if (solidMask == 63)
-                        ApplyLightToBlock(x, y, z, energyAtSurface, ray.SourceId);
-                }
+                ApplyLightToBlock(x, y, z, energyAtSurface, ray.SourceId);
             }
 
-            // Однократное отражение (масштабируется по объемной доле для микроблоков)
-            if (ray.BounceCount == 0 && effectiveAbs > 0)
+
+            // Однократное отражение — только от чистых граней (одноосевое пересечение)
+            if (ray.BounceCount == 0 && isOpaque)
             {
-                int reflectivity = GetReflectivity(block);
+                int crossCount = (crossX ? 1 : 0) + (crossY ? 1 : 0) + (crossZ ? 1 : 0);
 
-                if (microBE != null && reflectivity > 0)
+                // Угловые/диагональные попадания пропускаем: у них нет чистой нормали,
+                // именно они давали перекошенную полусферу и "свет в стенах".
+                if (crossCount == 1)
                 {
-                    MicroblockLightProfile profile =
-                        MicroblockLightCache.GetOrCompute(microBE, blockTypes);
-                    reflectivity = reflectivity * profile.VolumeFraction / 255;
-                }
+                    int reflectivity = GetReflectivity(block);
 
-                if (reflectivity > 0)
-                {
-                    float reflectedEnergy = energyAtSurface * reflectivity / 100f;
-                    if (reflectedEnergy > 0.01f)
+                    if (microBE != null && reflectivity > 0)
                     {
-                        float hitX = posX + dirX * nextDistance;
-                        float hitY = posY + dirY * nextDistance;
-                        float hitZ = posZ + dirZ * nextDistance;
+                        MicroblockLightProfile profile =
+                            MicroblockLightCache.GetOrCompute(microBE, blockTypes);
+                        reflectivity = reflectivity * profile.VolumeFraction / 255;
+                    }
 
-                        SpawnReflectionRays(
-                            hitX + faceNormalX * 0.01f,
-                            hitY + faceNormalY * 0.01f,
-                            hitZ + faceNormalZ * 0.01f,
-                            faceNormalX, faceNormalY, faceNormalZ,
-                            reflectedEnergy, ray.H, ray.S, ray.B, ray.SourceId);
+                    if (reflectivity > 0)
+                    {
+                        float reflectedEnergy = energyAtSurface * reflectivity / 100f;
+                        if (reflectedEnergy > 0.01f)
+                        {
+                            // Чистая единичная нормаль (одна ось)
+                            float nx = crossX ? -stepX : 0f;
+                            float ny = crossY ? -stepY : 0f;
+                            float nz = crossZ ? -stepZ : 0f;
+
+                            // Центр грани, в которую ударил луч:
+                            // по касательным осям — центр вокселя (0.5),
+                            // по осевой — координата граничной плоскости.
+                            float ox = x + 0.5f;
+                            float oy = y + 0.5f;
+                            float oz = z + 0.5f;
+                            if (crossX) ox = (stepX > 0) ? x : x + 1;
+                            if (crossY) oy = (stepY > 0) ? y : y + 1;
+                            if (crossZ) oz = (stepZ > 0) ? z : z + 1;
+
+                            // Выталкиваем источник отражений на 0.01 в воксель, откуда прилетел луч
+                            ox += nx * 0.01f;
+                            oy += ny * 0.01f;
+                            oz += nz * 0.01f;
+
+                            SpawnReflectionRays(ox, oy, oz, nx, ny, nz,
+                                reflectedEnergy, ray.H, ray.S, ray.B, ray.SourceId);
+                        }
                     }
                 }
             }
@@ -1061,10 +1274,43 @@ public class LumosChunkIlluminator
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private float GetEffectiveAbsorption(
-        Block block, int baseAbsorption, BlockFacing dir,
-        float incomingEnergy,
-        BlockEntityMicroBlock microBE = null, BlockPos pos = null)
+    Block block, int baseAbsorption, BlockFacing dir,
+    float incomingEnergy,
+    BlockEntityMicroBlock microBE = null, BlockPos pos = null)
     {
+        // Проверяем двери ПЕРЕД досрочным выходом по baseAbsorption <= 0.
+        // У дверей baseAbsorption = 0 в JSON, поэтому старый код выходил здесь,
+        // даже не дойдя до проверки дверей.
+        if (microBE == null && pos != null && readBlockAccess != null)
+        {
+            bool opened;
+            if (IsDoorBlock(block, pos, out opened))
+            {
+                if (opened) return 0f; // Открытая дверь полностью прозрачна
+
+                // Закрытая дверь: проверяем, блокирует ли она свет в направлении dir.
+                float cx = pos.X + 0.5f;
+                float cy = pos.Y + 0.5f;
+                float cz = pos.Z + 0.5f;
+
+                float startX = cx - dir.Normali.X * 0.51f;
+                float startY = cy - dir.Normali.Y * 0.51f;
+                float startZ = cz - dir.Normali.Z * 0.51f;
+                float endX = cx + dir.Normali.X * 0.51f;
+                float endY = cy + dir.Normali.Y * 0.51f;
+                float endZ = cz + dir.Normali.Z * 0.51f;
+
+                if (SegmentHitsCollisionBoxes(block, pos, startX, startY, startZ, endX, endY, endZ))
+                {
+                    // Дверь блокирует луч. Возвращаем значение, гарантированно большее
+                    // defaultSunLight (22) и MAX_BLOCK_LIGHT_LEVEL (31), чтобы свет
+                    // полностью блокировался в Sunlight и ProcessRay.
+                    return Math.Max(baseAbsorption, MAX_BLOCK_LIGHT_LEVEL + 1);
+                }
+                return 0f; // Дверь не блокирует луч в этом направлении
+            }
+        }
+
         if (baseAbsorption <= 0) return 0f;
 
         if (microBE != null)
@@ -1078,18 +1324,14 @@ public class LumosChunkIlluminator
             byte effAbs = profile.GetEffectiveAbsForAxis(axisIndex);
 
             if (effAbs == 0) return 0f;
-
             return effAbs;
         }
 
         // Обычные блоки
-        int solidMask = GetSolidMask(block, null);
+        int solidMask = GetSolidMask(block, null, pos);
 
-        if (solidMask == 63)
-            return baseAbsorption;
-
-        if (solidMask == 0)
-            return baseAbsorption;
+        if (solidMask == 63) return baseAbsorption;
+        if (solidMask == 0) return baseAbsorption;
 
         BlockFacing incoming = dir.Opposite;
         BlockFacing outgoing = dir;
@@ -1624,9 +1866,8 @@ public class LumosChunkIlluminator
 
                         if (effectiveAbs > num5)
                         {
-                            int solidMask = GetSolidMask(block, microBE);
-                            if (solidMask == 63) SetSun(chunkX, num6 + dimOffset, chunkZ, worldChunk, num7, num5);
-                            else SetSun(chunkX, num6 + dimOffset, chunkZ, worldChunk, num7, 0);
+                            SetSun(chunkX, num6 + dimOffset, chunkZ, worldChunk, num7, num5);
+
                             num6 = -1;
                             break;
                         }
@@ -1875,6 +2116,8 @@ public class LumosChunkIlluminator
                     BlockFacing dir = BlockFacing.ALLFACES[i];
 
                     float effectiveAbs = GetEffectiveAbsorption(posBlock, baseAbsorption, dir, currentLight, posMicroBE, tmpPos);
+
+
                     int newLight = currentLight - (int)effectiveAbs - 1;
                     if (newLight <= 0) continue;
 
@@ -1882,13 +2125,15 @@ public class LumosChunkIlluminator
                     GetBlockAndAbsorption(worldChunk, nIndex3d, tmpPos2,
                         out Block nBlock, out int nBaseAbs, out BlockEntityMicroBlock nMicroBE);
 
-                    float nEffectiveAbs = GetEffectiveAbsorption(nBlock, nBaseAbs, dir, newLight, nMicroBE, tmpPos2);
+                    //float nEffectiveAbs = GetEffectiveAbsorption(nBlock, nBaseAbs, dir, newLight, nMicroBE, tmpPos2);
+
+                    //if (nBlock.Code.Path.ToString().Contains("slab") && tmpPos2.Z==511919)
+                    //{
+                    tmpPos2 = tmpPos2;
+                    //}
+
                     int finalLight = newLight;
-                    if (nEffectiveAbs > newLight)
-                    {
-                        int solidMask = GetSolidMask(nBlock, nMicroBE);
-                        if (solidMask != 63 && nMicroBE == null) finalLight = 0;
-                    }
+
 
                     if (GetSun(chunkX, nChunkY + currentDimOffset, chunkZ, worldChunk, nIndex3d) < finalLight)
                     {
@@ -2329,6 +2574,78 @@ public class LumosChunkIlluminator
             retainedLightToSpread.Enqueue(item);
 
         tmpPos.SetDimension(0);
+    }
+
+    // Вспомогательный метод 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private bool IsDoorBlock(Block block, BlockPos pos, out bool opened)
+    {
+        opened = false;
+        if (block == null || pos == null || readBlockAccess == null) return false;
+
+        // 1. СНАЧАЛА проверяем через BlockEntity 
+        // BlockEntity всегда содержит BEBehaviorDoor для дверей
+        var be = readBlockAccess.GetBlockEntity(pos);
+        if (be != null)
+        {
+            var doorBeh = be.GetBehavior<BEBehaviorDoor>();
+            if (doorBeh != null)
+            {
+                opened = doorBeh.Opened;
+                return true;
+            }
+            var trapBeh = be.GetBehavior<BEBehaviorTrapDoor>();
+            if (trapBeh != null)
+            {
+                opened = trapBeh.Opened;
+                return true;
+            }
+        }
+
+        // 2. Проверяем мультиблоки (верхние/боковые части дверей)
+        if (block is BlockMultiblock mb)
+        {
+            BlockPos mainPos = pos.AddCopy(mb.OffsetInv);
+            var mainBe = readBlockAccess.GetBlockEntity(mainPos);
+            if (mainBe != null)
+            {
+                var doorBeh = mainBe.GetBehavior<BEBehaviorDoor>();
+                if (doorBeh != null)
+                {
+                    opened = doorBeh.Opened;
+                    return true;
+                }
+                var trapBeh = mainBe.GetBehavior<BEBehaviorTrapDoor>();
+                if (trapBeh != null)
+                {
+                    opened = trapBeh.Opened;
+                    return true;
+                }
+            }
+        }
+
+        // 3. Фоллбэк: проверяем тип блока напрямую
+        // BlockDoor наследуется от BlockBaseDoor, который наследуется от Block
+        if (block is BlockDoor || block is BlockBaseDoor)
+        {
+            // Не можем получить opened без BlockEntity, считаем закрытой
+            return true;
+        }
+
+        // 4. Последний фоллбэк: проверяем BlockBehavior (может не работать для всех дверей)
+        if (block.BlockBehaviors != null)
+        {
+            for (int i = 0; i < block.BlockBehaviors.Length; i++)
+            {
+                var bh = block.BlockBehaviors[i];
+                if (bh is BlockBehaviorDoor || bh is BlockBehaviorTrapDoor)
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     /// <summary>
