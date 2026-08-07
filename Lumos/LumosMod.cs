@@ -12,7 +12,7 @@ using Vintagestory.API.Common;
     "lumos",
     Website = "https://github.com/tehtelev/Lumos",
     Description = "Reworking the game's lighting system and fixing related bugs",
-    Version = "1.0.4",
+    Version = "1.0.5",
     Authors = new[] { "Tehtelev"}
 )]
 
@@ -63,8 +63,8 @@ public class LumosMod : ModSystem
     /// </summary>
     public override void Dispose()
     {
-        // 1. Очищаем статические кэши осветителя (сферы Фибоначчи)
-        LumosChunkIlluminator.ClearStaticCaches();
+        // 1. Очищаем кэши)
+        LumosChunkIlluminator.ClearCaches();
 
         // 2. Очищаем кэш профилей микроблоков
         MicroblockLightCache.Clear();
