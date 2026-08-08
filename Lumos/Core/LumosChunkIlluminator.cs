@@ -903,6 +903,8 @@ public class LumosChunkIlluminator
             int solidMask = GetSolidMask(block, microBE, tmpPos);
 
             bool isOpaque;
+            bool isDoor=false;
+
             if (microBE != null)
             {
                 isOpaque = false;
@@ -910,7 +912,7 @@ public class LumosChunkIlluminator
             else
             {
                 // Единая проверка через IsDoorBlock (с кэш-фильтром)
-                bool isDoor = IsDoorBlock(block, tmpPos, out _);
+                isDoor = IsDoorBlock(block, tmpPos, out _);
 
                 if (isDoor)
                 {
@@ -943,7 +945,11 @@ public class LumosChunkIlluminator
             {
                 ApplyLightToBlock(x, y, z, energy, ray.SourceId);
             }
-
+            else if (energyAtSurface > 0f)
+            {
+                if(!isDoor) // дверям свет даем только урезанный
+                    ApplyLightToBlock(x, y, z, energyAtSurface, ray.SourceId);
+            }
 
             // Однократное отражение 
             if (ray.BounceCount == 0 && isOpaque)
@@ -992,7 +998,7 @@ public class LumosChunkIlluminator
                 }
             }
 
-            //if (isOpaque) break;
+
             if (energy <= 0) break;
         }
     }
