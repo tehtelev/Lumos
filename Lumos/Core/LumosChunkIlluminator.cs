@@ -943,11 +943,7 @@ public class LumosChunkIlluminator
             {
                 ApplyLightToBlock(x, y, z, energy, ray.SourceId);
             }
-            else if (energyAtSurface > 0f)
-            {
 
-                ApplyLightToBlock(x, y, z, energyAtSurface, ray.SourceId);
-            }
 
             // Однократное отражение 
             if (ray.BounceCount == 0 && isOpaque)
