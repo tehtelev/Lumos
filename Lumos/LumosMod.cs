@@ -12,7 +12,7 @@ using Vintagestory.API.Common;
     "lumos",
     Website = "https://github.com/tehtelev/Lumos",
     Description = "Reworking the game's lighting system and fixing related bugs",
-    Version = "1.0.6",
+    Version = "1.1.0",
     Authors = new[] { "Tehtelev"}
 )]
 

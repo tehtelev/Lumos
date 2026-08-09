@@ -372,15 +372,16 @@ public class LumosChunkIlluminator
     // кэш блок/поглощение по позиции для одного прохода трассировки 
 
     /// <summary>
-    /// Закэшированный результат GetBlockAndAbsorption для одной позиции.
-    /// Живет только в пределах одного вызова TraceNearbyBlockLights —
-    /// см. blockLookupCache.Clear() в начале этого метода.
+    /// Закэшированный результат GetBlockAndAbsorption и GetRayCollisionBoxes для одной позиции.
+    /// Живет только в пределах одного вызова TraceNearbyBlockLights.
     /// </summary>
     private struct BlockLookupCacheEntry
     {
         public Block Block;
         public int BaseAbsorption;
         public BlockEntityMicroBlock MicroBE;
+        public Cuboidf[] CollisionBoxes;
+        public bool HasCollisionBoxes;
     }
 
     /// <summary>
@@ -405,7 +406,9 @@ public class LumosChunkIlluminator
         BlockPos pos,
         out Block block,
         out int baseAbsorption,
-        out BlockEntityMicroBlock microBE)
+        out BlockEntityMicroBlock microBE,
+        out Cuboidf[] collisionBoxes,
+        out bool hasCollisionBoxes)
     {
         long key = PackPos(pos.X, pos.Y, pos.Z);
 
@@ -414,17 +417,34 @@ public class LumosChunkIlluminator
             block = cached.Block;
             baseAbsorption = cached.BaseAbsorption;
             microBE = cached.MicroBE;
+            collisionBoxes = cached.CollisionBoxes;
+            hasCollisionBoxes = cached.HasCollisionBoxes;
             return;
         }
 
         GetBlockAndAbsorption(chunk, index3d, pos, out block, out baseAbsorption, out microBE);
 
+        Cuboidf[] boxes = null;
+        bool hasBoxes = false;
+
+        // Для микроблоков коллизии не используются в трассировке, для воздуха их нет
+        if (microBE == null && block.Id != 0)
+        {
+            boxes = GetRayCollisionBoxes(block, pos);
+            hasBoxes = boxes != null && boxes.Length > 0;
+        }
+
         blockLookupCache[key] = new BlockLookupCacheEntry
         {
             Block = block,
             BaseAbsorption = baseAbsorption,
-            MicroBE = microBE
+            MicroBE = microBE,
+            CollisionBoxes = boxes,
+            HasCollisionBoxes = hasBoxes
         };
+
+        collisionBoxes = boxes;
+        hasCollisionBoxes = hasBoxes;
     }
 
 
@@ -955,7 +975,8 @@ public class LumosChunkIlluminator
 
             tmpPos.Set(x, y, z);
             GetBlockAndAbsorptionCached(chunk, index3d, tmpPos,
-                out Block block, out int baseAbsorption, out BlockEntityMicroBlock microBE);
+                out Block block, out int baseAbsorption, out BlockEntityMicroBlock microBE,
+                out Cuboidf[] cachedBoxes, out bool cachedHasGeometry);
 
             float stepDistance = segEnd - segStart;
             energy -= stepDistance; // Потеря энергии просто от прохождения расстояния в воздухе
@@ -991,11 +1012,8 @@ public class LumosChunkIlluminator
                 else
                 {
                     // Обычный путь: проверка коллизий
-                    bool hasGeometry = false;
+                    bool hasGeometry = cachedHasGeometry;
                     bool geometryHit = false;
-
-                    Cuboidf[] boxes = GetRayCollisionBoxes(block, tmpPos);
-                    hasGeometry = boxes != null && boxes.Length > 0;
 
                     if (hasGeometry)
                     {
@@ -1006,12 +1024,13 @@ public class LumosChunkIlluminator
                         float endY = posY + dirY * segEnd;
                         float endZ = posZ + dirZ * segEnd;
 
-                        geometryHit = SegmentIntersectsBoxes(boxes, tmpPos,
+                        geometryHit = SegmentIntersectsBoxes(cachedBoxes, tmpPos,
                             startX, startY, startZ, endX, endY, endZ);
                     }
 
+                    // Передаем cachedBoxes в GetEffectiveAbsorption для оптимизации проверки дверей
                     float effectiveAbs = GetEffectiveAbsorption(
-                        block, baseAbsorption, hitFace, energy, microBE, tmpPos, geometryHit, false);
+                        block, baseAbsorption, hitFace, energy, microBE, tmpPos, geometryHit, false, cachedBoxes);
 
                     if (effectiveAbs > 0f)
                         energy -= effectiveAbs;
@@ -1363,16 +1382,13 @@ public class LumosChunkIlluminator
     private float GetEffectiveAbsorption(
         Block block, int baseAbsorption, BlockFacing dir,
         float incomingEnergy,
-        BlockEntityMicroBlock microBE = null, BlockPos pos = null, bool geometryHit = false, bool isSunlight = true)
+        BlockEntityMicroBlock microBE = null, BlockPos pos = null, bool geometryHit = false, bool isSunlight = true, Cuboidf[] boxes = null)
     {
         // Проверяем двери ПЕРЕД досрочным выходом по baseAbsorption <= 0.
-        // У дверей baseAbsorption = 0 в JSON, поэтому старый код выходил здесь,
-        // даже не дойдя до проверки дверей.
         if (microBE == null && pos != null && readBlockAccess != null)
         {
             if (IsDoorBlock(block, pos))
             {
-
                 float cx = pos.X + 0.5f;
                 float cy = pos.Y + 0.5f;
                 float cz = pos.Z + 0.5f;
@@ -1384,8 +1400,10 @@ public class LumosChunkIlluminator
                 float endY = cy + dir.Normali.Y * 0.51f;
                 float endZ = cz + dir.Normali.Z * 0.51f;
 
-                Cuboidf[] boxes = GetRayCollisionBoxes(block, pos);
-                if (SegmentIntersectsBoxes(boxes, pos, startX, startY, startZ, endX, endY, endZ))
+                // Используем переданные из кэша коробки, если они есть, иначе вычисляем (для солнечных лучей)
+                if (boxes == null) boxes = GetRayCollisionBoxes(block, pos);
+
+                if (boxes != null && SegmentIntersectsBoxes(boxes, pos, startX, startY, startZ, endX, endY, endZ))
                     return Math.Max(baseAbsorption, MAX_BLOCK_LIGHT_LEVEL + 1);
                 return 0f;
             }
