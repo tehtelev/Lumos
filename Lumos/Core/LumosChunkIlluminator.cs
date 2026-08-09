@@ -918,16 +918,16 @@ public class LumosChunkIlluminator
                 // Если блок имеет все грани твердыми, то мы точто попадем в коллизию, и нет смысла проверять геометрию.
                 int solidMask = GetSolidMask(block, microBE, tmpPos);
 
-                if (solidMask == 63)
+                if (solidMask == 63 || block.Id==0 || block.IsLiquid())
                 {
-                    // Блок полностью сплошной: считаем его "попаданием по геометрии" 
+
                     float effectiveAbs = GetEffectiveAbsorption(
                         block, baseAbsorption, hitFace, energy, microBE, tmpPos, true, false);
 
                     if (effectiveAbs > 0f)
                         energy -= effectiveAbs;
 
-                    isOpaque = true; 
+                    isOpaque = (block.Id != 0); 
                 }
                 else
                 {
