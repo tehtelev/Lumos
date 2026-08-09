@@ -29,7 +29,6 @@ namespace Lumos.Core;
 ///   LightAbsorption / SideSolid (см. GetBlockAndAbsorption / GetSolidMask).
 /// - Буферизация солнечного света: предотвращает мерцание мобов и меша при пересчете
 ///   за счет работы во временном массиве (staging) с последующим атомарным коммитом.
-
 /// </summary>
 public class LumosChunkIlluminator
 {
@@ -87,7 +86,7 @@ public class LumosChunkIlluminator
     private int mapsizey;
     private int mapsizez;
 
-    /// <summary>Множители шага для плоского индексирования чанка (X=1, Z=chunkSize, Y=chunkSize²).</summary>
+    /// <summary>Множители шага (stride) для плоского индексирования чанка (X=1, Z=chunkSize, Y=chunkSize²).</summary>
     private int XPlus = 1;
     private int YPlus;
     private int ZPlus;
@@ -122,7 +121,6 @@ public class LumosChunkIlluminator
     /// Позволяет использовать быстрый поиск в массиве вместо виртуальной проверки `is`.
     /// </summary>
     private static bool[] isMicroblockCache;
-
 
     /// <summary>
     /// Флаг для каждого BlockId: "является ли это прокси-мультиблоком?".
@@ -176,10 +174,6 @@ public class LumosChunkIlluminator
         return m;
     }
 
-
-
-
-
     // ─── Стейджинг солнечного света (предотвращает мерцание рендера) ─────
 
     /// <summary>Временные массивы для пересчета солнечного света по ключу чанка.</summary>
@@ -219,7 +213,6 @@ public class LumosChunkIlluminator
         if (sunStagingPool.Count > 0) return sunStagingPool.Pop();
         return new byte[chunkSize * chunkSize * chunkSize];
     }
-
 
     /// <summary>
     /// Разрешает эффективный блок, его базовое поглощение и опциональный
@@ -348,7 +341,7 @@ public class LumosChunkIlluminator
                ((long)(z & 0x1FFFFF) << 42);
     }
 
-    /// <summary>Обратная операция для PackPos.</summary>
+    /// <summary>Обратная операция для PackPos с восстановлением знака.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static void UnpackPos(long key, out int x, out int y, out int z)
     {
@@ -730,6 +723,7 @@ public class LumosChunkIlluminator
 
         const float EPS = 1e-4f;
 
+        // Алгоритм пересечения луча с AABB (Slab method)
         for (int i = 0; i < boxes.Length; i++)
         {
             Cuboidf box = boxes[i];
@@ -921,7 +915,10 @@ public class LumosChunkIlluminator
         return false;
     }
 
-
+    /// <summary>
+    /// Обрабатывает один луч: выполняет DDA-обход вокселей (Amanatides & Woo),
+    /// применяет поглощение и генерирует отражения при ударе о непрозрачную поверхность.
+    /// </summary>
     private void ProcessRay(LightRay ray)
     {
         float posX = ray.OriginX;
@@ -936,14 +933,17 @@ public class LumosChunkIlluminator
         int y = (int)Math.Floor(posY);
         int z = (int)Math.Floor(posZ);
 
+        // Направление шага по сетке вокселей (+1 или -1)
         int stepX = dirX > 0 ? 1 : -1;
         int stepY = dirY > 0 ? 1 : -1;
         int stepZ = dirZ > 0 ? 1 : -1;
 
+        // Расстояние, которое луч проходит внутри одного вокселя вдоль соответствующей оси
         float tDeltaX = Math.Abs(1.0f / dirX);
         float tDeltaY = Math.Abs(1.0f / dirY);
         float tDeltaZ = Math.Abs(1.0f / dirZ);
 
+        // Расстояние от начала луча до первой границы вокселя по каждой оси
         float tMaxX = ((dirX > 0 ? (x + 1 - posX) : (posX - x))) * tDeltaX;
         float tMaxY = ((dirY > 0 ? (y + 1 - posY) : (posY - y))) * tDeltaY;
         float tMaxZ = ((dirZ > 0 ? (z + 1 - posZ) : (posZ - z))) * tDeltaZ;
@@ -954,6 +954,7 @@ public class LumosChunkIlluminator
 
         float currentDistance = 0f;
 
+        // Количество осей, пересеченных на текущем шаге (нужно для корректной обработки углов/ребер)
         int entryCrossCount = 0;
         float entryNormalX = 0, entryNormalY = 0, entryNormalZ = 0;
 
@@ -973,7 +974,7 @@ public class LumosChunkIlluminator
             float segEnd = tNext;
             if (segEnd < segStart) segEnd = segStart;
 
-            // ИСПРАВЛЕНИЕ: Возвращаем приоритет осей (X > Y > Z) для hitFace.
+            // Возвращаем приоритет осей (X > Y > Z) для hitFace.
             // Это критически важно для дверей и люков, чтобы центральный тест 
             // в GetEffectiveAbsorption шел вдоль правильной оси и не промахивался 
             // мимо их тонкой геометрии при попаданиях в ребра/углы.
@@ -994,6 +995,7 @@ public class LumosChunkIlluminator
             int cy = y >> chunkSizeLog2;
             int cz = z >> chunkSizeLog2;
 
+            // Кэшируем чанк, чтобы не искать его при перемещении внутри одного чанка
             if (cx != lastChunkX || cy != lastChunkY || cz != lastChunkZ)
             {
                 cachedChunk = chunkProvider.GetUnpackedChunkFast(cx, cy, cz, notRecentlyAccessed: true);
@@ -1011,7 +1013,7 @@ public class LumosChunkIlluminator
                 out Block block, out int baseAbsorption, out BlockEntityMicroBlock microBE);
 
             float stepDistance = segEnd - segStart;
-            energy -= stepDistance;
+            energy -= stepDistance; // Потеря энергии просто от прохождения расстояния в воздухе
             float energyAtSurface = energy;
 
             bool isOpaque = false;
@@ -1054,7 +1056,7 @@ public class LumosChunkIlluminator
 
                 if (hasGeometry)
                 {
-                    isOpaque = geometryHit || effectiveAbs>0;
+                    isOpaque = geometryHit || effectiveAbs > 0;
                 }
                 else
                 {
@@ -1100,6 +1102,7 @@ public class LumosChunkIlluminator
                             float ny = entryNormalY;
                             float nz = entryNormalZ;
 
+                            // Точка на поверхности блока + микро-смещение по нормали, чтобы избежать self-intersection
                             float ox = x + 0.5f;
                             float oy = y + 0.5f;
                             float oz = z + 0.5f;
@@ -1122,6 +1125,7 @@ public class LumosChunkIlluminator
             if (energy <= 0)
                 break;
 
+            // Вычисляем, какие оси были пересечены на этом шаге (с учетом погрешности float)
             const float TIE_EPS = 1e-5f;
             bool crossX = (tMaxX - tNext) <= TIE_EPS;
             bool crossY = (tMaxY - tNext) <= TIE_EPS;
@@ -1139,8 +1143,6 @@ public class LumosChunkIlluminator
             currentDistance = tNext;
         }
     }
-
-
 
     /// <summary>Записывает вклад источника в стейджинг-словарь.</summary>
     private void ApplyLightToBlock(int x, int y, int z, float energy, int sourceId)
@@ -1470,14 +1472,12 @@ public class LumosChunkIlluminator
             {
                 return baseAbsorption; // для блочного света используем полное поглощение, если попали в геометрию
             }
-                
+
         }
         else
         {
             return 0f; // если не попали в геометрию, то поглощение равно 0
         }
-
-        
     }
 
     // ─── Хелперы чанков ──────────────────────────────────────────────────
@@ -1664,6 +1664,7 @@ public class LumosChunkIlluminator
     /// Вычисляет упакованное значение блочного света из всех вкладов источников,
     /// накопленных в стейджинг-словаре для одного блока.
     /// Не затрагивает chunk.Lighting.
+    /// Формат упаковки: [0..4] Brightness, [5..9] Hue, [10..15] Saturation.
     /// </summary>
     private int CalculatePackedLight(LightSourcesAtBlock lsab)
     {
@@ -1912,6 +1913,7 @@ public class LumosChunkIlluminator
             value2?.Lighting.ClearLight();
 
         // Солнечный свет: прямой сверху вниз + горизонтальное распространение + обмен с соседями
+        // Массив представляет вертикальную колонку чанков для текущего X/Z
         IWorldChunk[] array = new IWorldChunk[mapsizey / num];
 
         for (int l = num8; l <= num11; l++)
@@ -1975,6 +1977,7 @@ public class LumosChunkIlluminator
         {
             for (int j = 0; j < num; j++)
             {
+                // Берем свет снизу вышестоящего чанка (или дефолтный, если это крыша мира)
                 int num5 = defaultSunLight;
                 if (chunkY != chunks.Length - 1)
                     num5 = GetSun(chunkX, chunkY + 1 + dimOffset, chunkZ, chunks[chunkY + 1], j * num + i);
@@ -2013,6 +2016,7 @@ public class LumosChunkIlluminator
 
     /// <summary>
     /// Горизонтальное распространение солнечного света (BFS) внутри колонки чанков.
+    /// Находит перепады освещения между соседними блоками и добавляет их в стек для BFS.
     /// </summary>
     public void SunlightFlood(IWorldChunk[] chunks, int chunkX, int chunkY, int chunkZ)
     {
@@ -2041,6 +2045,7 @@ public class LumosChunkIlluminator
 
                         if (num7 <= 0) break;
 
+                        // Проверяем 4 горизонтальных сосега на наличие градиента (распространения)
                         if ((i < num - 1 && GetSun(chunkX, num4 + currentDimOffset, chunkZ, worldChunk, num5 + XPlus) < num7) ||
                             (j < num - 1 && GetSun(chunkX, num4 + currentDimOffset, chunkZ, worldChunk, num5 + ZPlus) < num7) ||
                             (i > 0 && GetSun(chunkX, num4 + currentDimOffset, chunkZ, worldChunk, num5 - XPlus) < num7) ||
@@ -2058,6 +2063,7 @@ public class LumosChunkIlluminator
 
     /// <summary>
     /// Обмен солнечным светом через горизонтальные границы чанков (4 направления).
+    /// Обрабатывает переходы света между соседними чанками, учитывая направленное поглощение.
     /// </summary>
     public byte SunLightFloodNeighbourChunks(IWorldChunk[] curChunks, int chunkX, int chunkY, int chunkZ, int dimension)
     {
@@ -2092,7 +2098,10 @@ public class LumosChunkIlluminator
             array2[0] = (num - 1) * Math.Max(0, x);
             array2[1] = (num - 1) * Math.Max(0, y);
             array2[2] = (num - 1) * Math.Max(0, z);
+
             int num4 = (chunkX + x) * num;
+            int numZBase = (chunkZ + z) * num; // Базовая мировая Z-координата соседнего чанка
+
             int num5 = 0;
             if (x == 0) array[num5++] = 0;
             if (y == 0) array[num5++] = 1;
@@ -2127,7 +2136,8 @@ public class LumosChunkIlluminator
                         tmpPos2.dimension = dimension;
                         GetBlockAndAbsorption(worldChunk2, index3d, tmpPos2, out Block curBlock, out int curBaseAbs, out BlockEntityMicroBlock curMicroBE);
 
-                        tmpPosDimensionAware.Set(num4 + num9, num6 * num + array2[1], num4 + num10);
+                        // Передаем корректные мировые координаты соседнего блока
+                        tmpPosDimensionAware.Set(num4 + num9, num6 * num + array2[1], numZBase + num10);
                         GetBlockAndAbsorption(worldChunk, index3d2, tmpPosDimensionAware, out Block nBlock, out int nBaseAbs, out BlockEntityMicroBlock nMicroBE);
 
                         float absCurToN = GetEffectiveAbsorption(curBlock, curBaseAbs, dir, curLight, curMicroBE, tmpPos2, true);
@@ -2145,7 +2155,9 @@ public class LumosChunkIlluminator
                         if (finalLightToN > nLight)
                         {
                             SetSun(chunkX + x, num6 + dimOffset, chunkZ + z, worldChunk, index3d2, finalLightToN);
-                            stack2.Push(new FastBlockPos(num4 + num9, num6 * num + array2[1], num4 + num10, dimension));
+
+                            // Сохраняем мировые координаты для BFS
+                            stack2.Push(new FastBlockPos(num4 + num9, num6 * num + array2[1], numZBase + num10, dimension));
                             b |= blockFacing.Flag;
                         }
                         else if (finalLightToCur > curLight)
@@ -2246,7 +2258,6 @@ public class LumosChunkIlluminator
 
                     float effectiveAbs = GetEffectiveAbsorption(posBlock, baseAbsorption, dir, currentLight, posMicroBE, tmpPos, true);
 
-
                     int newLight = currentLight - (int)effectiveAbs - 1;
                     if (newLight <= 0) continue;
 
@@ -2254,15 +2265,7 @@ public class LumosChunkIlluminator
                     GetBlockAndAbsorption(worldChunk, nIndex3d, tmpPos2,
                         out Block nBlock, out int nBaseAbs, out BlockEntityMicroBlock nMicroBE);
 
-                    //float nEffectiveAbs = GetEffectiveAbsorption(nBlock, nBaseAbs, dir, newLight, nMicroBE, tmpPos2);
-
-                    //if (nBlock.Code.Path.ToString().Contains("slab") && tmpPos2.Z==511919)
-                    //{
-                    tmpPos2 = tmpPos2;
-                    //}
-
                     int finalLight = newLight;
-
 
                     if (GetSun(chunkX, nChunkY + currentDimOffset, chunkZ, worldChunk, nIndex3d) < finalLight)
                     {
@@ -2490,7 +2493,7 @@ public class LumosChunkIlluminator
 
     /// <summary>
     /// Проверяет, достигает ли солнечный свет блока напрямую сверху
-    /// (нет непрозрачных препятствий в колонке).
+    /// (нет непрозрачных препятствий в колонке). Используется для оптимизации BFS.
     /// </summary>
     public bool IsDirectlyIlluminated(int posX, int posY, int posZ)
     {
@@ -2526,6 +2529,13 @@ public class LumosChunkIlluminator
     /// <summary>
     /// BFS-распространение солнечного света из очереди упакованных позиций.
     /// Используется ванильным конвейером пересчета для инкрементальных обновлений.
+    /// 
+    /// Формат упаковки в QueueOfInt (num2):
+    /// Биты 0-7:   Смещение X (со знаком, +128)
+    /// Биты 8-15:  Смещение Y (со знаком, +128)
+    /// Биты 16-23: Смещение Z (со знаком, +128)
+    /// Биты 24-28: Уровень света (0-31)
+    /// Биты 29-31: Индекс грани, откуда пришли + 1 (используется для предотвращения обратного хода)
     /// </summary>
     public void SpreadSunlightAt(
         QueueOfInt unhandledPositions, BlockPos centerPos,
@@ -2616,6 +2626,7 @@ public class LumosChunkIlluminator
     /// BFS "распространение тени": гасит солнечный свет при появлении препятствия.
     /// Сохраненный свет (ярче, чем волна гашения) собирается в retainedLightToSpread
     /// для повторного распространения.
+    /// Формат упаковки в QueueOfInt аналогичен SpreadSunlightAt.
     /// </summary>
     public void ClearSunlightAt(
         QueueOfInt positionsToClear, BlockPos centerPos,
@@ -2769,7 +2780,6 @@ public class LumosChunkIlluminator
             return true;
         }
 
-
         return false;
     }
 
@@ -2785,6 +2795,5 @@ public class LumosChunkIlluminator
         isDoorCache = null;
         isMultiblockCache = null;
         isMicroblockCache = null;
-
     }
 }
