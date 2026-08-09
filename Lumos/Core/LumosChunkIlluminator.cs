@@ -369,6 +369,65 @@ public class LumosChunkIlluminator
         return lsab;
     }
 
+    // кэш блок/поглощение по позиции для одного прохода трассировки 
+
+    /// <summary>
+    /// Закэшированный результат GetBlockAndAbsorption для одной позиции.
+    /// Живет только в пределах одного вызова TraceNearbyBlockLights —
+    /// см. blockLookupCache.Clear() в начале этого метода.
+    /// </summary>
+    private struct BlockLookupCacheEntry
+    {
+        public Block Block;
+        public int BaseAbsorption;
+        public BlockEntityMicroBlock MicroBE;
+    }
+
+    /// <summary>
+    /// Кэш "позиция → (блок, поглощение, microBE)" на время одного FlushPendingBlockLightUpdates.
+    /// Устраняет повторные проходы по ChunkDataLayer (палитра + rwlock) для вокселей,
+    /// через которые проходят десятки/сотни лучей одного и того же источника
+    /// (особенно вблизи источника, где лучи ещё не разошлись).
+    /// Заполняется лениво в GetBlockAndAbsorptionCached, чистится в TraceNearbyBlockLights.
+    /// </summary>
+    private readonly Dictionary<long, BlockLookupCacheEntry> blockLookupCache = new(8192);
+
+    /// <summary>
+    /// Кэширующая обёртка над GetBlockAndAbsorption. Безопасна в пределах одного прохода
+    /// трассировки блочного света, так как живой chunk.Data не модифицируется во время
+    /// трассировки (см. комментарий в FlushPendingBlockLightUpdates) — а значит результат
+    /// для конкретной позиции не может измениться до следующего Clear().
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private void GetBlockAndAbsorptionCached(
+        IWorldChunk chunk,
+        int index3d,
+        BlockPos pos,
+        out Block block,
+        out int baseAbsorption,
+        out BlockEntityMicroBlock microBE)
+    {
+        long key = PackPos(pos.X, pos.Y, pos.Z);
+
+        if (blockLookupCache.TryGetValue(key, out BlockLookupCacheEntry cached))
+        {
+            block = cached.Block;
+            baseAbsorption = cached.BaseAbsorption;
+            microBE = cached.MicroBE;
+            return;
+        }
+
+        GetBlockAndAbsorption(chunk, index3d, pos, out block, out baseAbsorption, out microBE);
+
+        blockLookupCache[key] = new BlockLookupCacheEntry
+        {
+            Block = block,
+            BaseAbsorption = baseAbsorption,
+            MicroBE = microBE
+        };
+    }
+
+
     /// <summary>Возвращает все записи стейджинга в пул и очищает словарь.</summary>
     private void RecycleVisitedNodes()
     {
@@ -895,7 +954,7 @@ public class LumosChunkIlluminator
             int index3d = ((y & chunkSizeMask) * chunkSize + (z & chunkSizeMask)) * chunkSize + (x & chunkSizeMask);
 
             tmpPos.Set(x, y, z);
-            GetBlockAndAbsorption(chunk, index3d, tmpPos,
+            GetBlockAndAbsorptionCached(chunk, index3d, tmpPos,
                 out Block block, out int baseAbsorption, out BlockEntityMicroBlock microBE);
 
             float stepDistance = segEnd - segStart;
@@ -1070,6 +1129,8 @@ public class LumosChunkIlluminator
     private void TraceNearbyBlockLights()
     {
         RecycleVisitedNodes();
+
+        blockLookupCache.Clear(); // сброс кэша перед новым проходом по всем источникам
 
         for (int srcIdx = 0; srcIdx < nearbyCount; srcIdx++)
         {
