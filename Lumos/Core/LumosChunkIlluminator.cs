@@ -922,11 +922,6 @@ public class LumosChunkIlluminator
     }
 
 
-    /// <summary>
-    /// DDA-марш луча: проходит луч через воксельную сетку, применяя свет,
-    /// поглощение и опциональные однократные отражения.
-    /// Кэширует текущий чанк, чтобы избежать повторных обращений к провайдеру.
-    /// </summary>
     private void ProcessRay(LightRay ray)
     {
         float posX = ray.OriginX;
@@ -957,7 +952,10 @@ public class LumosChunkIlluminator
         if (float.IsNaN(tMaxY)) tMaxY = float.PositiveInfinity;
         if (float.IsNaN(tMaxZ)) tMaxZ = float.PositiveInfinity;
 
-        float prevDistance = 0f;
+        float currentDistance = 0f;
+
+        int entryCrossCount = 0;
+        float entryNormalX = 0, entryNormalY = 0, entryNormalZ = 0;
 
         int lastChunkX = int.MinValue;
         int lastChunkY = int.MinValue;
@@ -971,29 +969,26 @@ public class LumosChunkIlluminator
             if (float.IsInfinity(tNext) || float.IsNaN(tNext))
                 break;
 
-            const float TIE_EPS = 1e-5f;
-            bool crossX = (tMaxX - tNext) <= TIE_EPS;
-            bool crossY = (tMaxY - tNext) <= TIE_EPS;
-            bool crossZ = (tMaxZ - tNext) <= TIE_EPS;
+            float segStart = currentDistance;
+            float segEnd = tNext;
+            if (segEnd < segStart) segEnd = segStart;
 
-            float faceNormalX = 0, faceNormalY = 0, faceNormalZ = 0;
-            if (crossX) { x += stepX; tMaxX += tDeltaX; faceNormalX = -stepX; }
-            if (crossY) { y += stepY; tMaxY += tDeltaY; faceNormalY = -stepY; }
-            if (crossZ) { z += stepZ; tMaxZ += tDeltaZ; faceNormalZ = -stepZ; }
-
+            // ИСПРАВЛЕНИЕ: Возвращаем приоритет осей (X > Y > Z) для hitFace.
+            // Это критически важно для дверей и люков, чтобы центральный тест 
+            // в GetEffectiveAbsorption шел вдоль правильной оси и не промахивался 
+            // мимо их тонкой геометрии при попаданиях в ребра/углы.
             BlockFacing hitFace;
-            if (crossX)
-                hitFace = stepX > 0 ? BlockFacing.WEST : BlockFacing.EAST;
-            else if (crossY)
-                hitFace = stepY > 0 ? BlockFacing.DOWN : BlockFacing.UP;
+            if (entryCrossCount > 0)
+            {
+                if (entryNormalX != 0) hitFace = entryNormalX > 0 ? BlockFacing.EAST : BlockFacing.WEST;
+                else if (entryNormalY != 0) hitFace = entryNormalY > 0 ? BlockFacing.UP : BlockFacing.DOWN;
+                else hitFace = entryNormalZ > 0 ? BlockFacing.NORTH : BlockFacing.SOUTH;
+            }
             else
-                hitFace = stepZ > 0 ? BlockFacing.SOUTH : BlockFacing.NORTH;
-
-            float nextDistance = tNext;
-            float stepDistance = nextDistance - prevDistance;
-            prevDistance = nextDistance;
-
-            if (stepDistance < 0f) break;
+            {
+                // Для самого первого вокселя (где луч родился) грани входа нет
+                hitFace = BlockFacing.UP;
+            }
 
             int cx = x >> chunkSizeLog2;
             int cy = y >> chunkSizeLog2;
@@ -1001,8 +996,7 @@ public class LumosChunkIlluminator
 
             if (cx != lastChunkX || cy != lastChunkY || cz != lastChunkZ)
             {
-                cachedChunk = chunkProvider.GetUnpackedChunkFast(
-                    cx, cy, cz, notRecentlyAccessed: true);
+                cachedChunk = chunkProvider.GetUnpackedChunkFast(cx, cy, cz, notRecentlyAccessed: true);
                 lastChunkX = cx;
                 lastChunkY = cy;
                 lastChunkZ = cz;
@@ -1010,19 +1004,15 @@ public class LumosChunkIlluminator
             }
 
             IWorldChunk chunk = cachedChunk;
-
             int index3d = ((y & chunkSizeMask) * chunkSize + (z & chunkSizeMask)) * chunkSize + (x & chunkSizeMask);
 
             tmpPos.Set(x, y, z);
             GetBlockAndAbsorption(chunk, index3d, tmpPos,
                 out Block block, out int baseAbsorption, out BlockEntityMicroBlock microBE);
 
+            float stepDistance = segEnd - segStart;
             energy -= stepDistance;
             float energyAtSurface = energy;
-
-
-
-            int solidMask = GetSolidMask(block, microBE, tmpPos);
 
             bool isOpaque = false;
             bool isDoor = false;
@@ -1031,33 +1021,20 @@ public class LumosChunkIlluminator
             {
                 float effectiveAbs = GetEffectiveAbsorption(
                     block, baseAbsorption, hitFace, energy, microBE, tmpPos, false);
-
-                if (effectiveAbs > 0f)
-                    energy -= effectiveAbs;
+                if (effectiveAbs > 0f) energy -= effectiveAbs;
             }
             else
             {
-                // Единая проверка через IsDoorBlock (с кэш-фильтром)
                 isDoor = IsDoorBlock(block, tmpPos, out _);
-
-                // Направленный тест по CollisionBoxes: обязателен для дверей,
-                // для прочих блоков — если они не являются гарантированно сплошным
-                // кубом (solidMask == 63, тест по коробкам для него избыточен).
 
                 bool hasGeometry = false;
                 bool geometryHit = false;
-
 
                 Cuboidf[] boxes = GetRayCollisionBoxes(block, tmpPos);
                 hasGeometry = boxes != null && boxes.Length > 0;
 
                 if (hasGeometry)
                 {
-                    // Истинный отрезок внутри текущего воксела
-                    float segStart = nextDistance;
-                    float segEnd = Math.Min(tMaxX, Math.Min(tMaxY, tMaxZ));
-                    if (segEnd < segStart) segEnd = segStart;
-
                     float startX = posX + dirX * segStart;
                     float startY = posY + dirY * segStart;
                     float startZ = posZ + dirZ * segStart;
@@ -1069,23 +1046,19 @@ public class LumosChunkIlluminator
                         startX, startY, startZ, endX, endY, endZ);
                 }
 
-
-
                 float effectiveAbs = GetEffectiveAbsorption(
                     block, baseAbsorption, hitFace, energy, microBE, tmpPos, geometryHit, false);
 
                 if (effectiveAbs > 0f)
                     energy -= effectiveAbs;
 
-
                 if (hasGeometry)
                 {
-                    // У блока есть реальные CollisionBoxes — доверяем направленному тесту
-                    isOpaque = geometryHit;
+                    isOpaque = geometryHit || effectiveAbs>0;
                 }
                 else
                 {
-                    // Коробок нет вообще (трава, некоторая листва, вода и т.д.) — как и раньше.
+                    int solidMask = GetSolidMask(block, microBE, tmpPos);
                     isOpaque = effectiveAbs > 0 || (
                         (solidMask & (1 << hitFace.Index)) != 0 ||
                         (solidMask & (1 << hitFace.Opposite.Index)) != 0
@@ -1093,25 +1066,22 @@ public class LumosChunkIlluminator
                 }
             }
 
-            // ПРИМЕНЕНИЕ СВЕТА
             if (energy > 0f)
             {
                 ApplyLightToBlock(x, y, z, energy, ray.SourceId);
             }
             else if (energyAtSurface > 0f)
             {
-                if (!isDoor) // дверям свет даем только урезанный
+                if (!isDoor)
                     ApplyLightToBlock(x, y, z, energyAtSurface, ray.SourceId);
             }
 
-            // Однократное отражение 
+            // Однократное отражение
             if (ray.BounceCount == 0 && isOpaque)
             {
-                int crossCount = (crossX ? 1 : 0) + (crossY ? 1 : 0) + (crossZ ? 1 : 0);
-
-                // Угловые/диагональные попадания пропускаем: чистая одноосевая нормаль
-                // устраняет асимметрию отражений между гранями
-                if (crossCount == 1)
+                // Для отражений оставляем строгую проверку: отражаем только от чистых 
+                // одноосевых попаданий, чтобы избежать артефактов на углах.
+                if (entryCrossCount == 1)
                 {
                     int reflectivity = GetReflectivity(block);
 
@@ -1124,22 +1094,20 @@ public class LumosChunkIlluminator
                     if (reflectivity > 0)
                     {
                         float reflectedEnergy = energyAtSurface * reflectivity / 100f;
-                        if (reflectedEnergy > 1f) // Минимальный порог для отражений
+                        if (reflectedEnergy > 1f)
                         {
-                            // Чистая единичная нормаль
-                            float nx = crossX ? -stepX : 0f;
-                            float ny = crossY ? -stepY : 0f;
-                            float nz = crossZ ? -stepZ : 0f;
+                            float nx = entryNormalX;
+                            float ny = entryNormalY;
+                            float nz = entryNormalZ;
 
-                            // Центр грани: по касательным — центр вокселя, по осевой — плоскость
                             float ox = x + 0.5f;
                             float oy = y + 0.5f;
                             float oz = z + 0.5f;
-                            if (crossX) ox = (stepX > 0) ? x : x + 1;
-                            if (crossY) oy = (stepY > 0) ? y : y + 1;
-                            if (crossZ) oz = (stepZ > 0) ? z : z + 1;
 
-                            // Выталкиваем источник отражений в воксель, откуда прилетел луч
+                            if (entryNormalX != 0) ox = (entryNormalX < 0) ? x : x + 1;
+                            if (entryNormalY != 0) oy = (entryNormalY < 0) ? y : y + 1;
+                            if (entryNormalZ != 0) oz = (entryNormalZ < 0) ? z : z + 1;
+
                             ox += nx * 0.01f;
                             oy += ny * 0.01f;
                             oz += nz * 0.01f;
@@ -1151,10 +1119,28 @@ public class LumosChunkIlluminator
                 }
             }
 
+            if (energy <= 0)
+                break;
 
-            if (energy <= 0) break;
+            const float TIE_EPS = 1e-5f;
+            bool crossX = (tMaxX - tNext) <= TIE_EPS;
+            bool crossY = (tMaxY - tNext) <= TIE_EPS;
+            bool crossZ = (tMaxZ - tNext) <= TIE_EPS;
+
+            entryCrossCount = (crossX ? 1 : 0) + (crossY ? 1 : 0) + (crossZ ? 1 : 0);
+            entryNormalX = crossX ? -stepX : 0f;
+            entryNormalY = crossY ? -stepY : 0f;
+            entryNormalZ = crossZ ? -stepZ : 0f;
+
+            if (crossX) { x += stepX; tMaxX += tDeltaX; }
+            if (crossY) { y += stepY; tMaxY += tDeltaY; }
+            if (crossZ) { z += stepZ; tMaxZ += tDeltaZ; }
+
+            currentDistance = tNext;
         }
     }
+
+
 
     /// <summary>Записывает вклад источника в стейджинг-словарь.</summary>
     private void ApplyLightToBlock(int x, int y, int z, float energy, int sourceId)
@@ -1415,7 +1401,6 @@ public class LumosChunkIlluminator
         {
             if (IsDoorBlock(block, pos, out bool opened))
             {
-                if (opened) return 0f; // Открытая дверь полностью прозрачна
 
                 float cx = pos.X + 0.5f;
                 float cy = pos.Y + 0.5f;
