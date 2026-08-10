@@ -272,7 +272,14 @@ public class LumosChunkIlluminator
                 baseAbsorption = fluidAbs;
         }
 
-        block = blockTypes[solidId != 0 ? solidId : fluidId];
+        if (solidId >= blockTypes.Count || fluidId >= blockTypes.Count)
+        {
+            block = null; // unknown block
+        }
+        else
+        {
+            block = blockTypes[solidId != 0 ? solidId : fluidId];
+        }
     }
 
     // ─── Стейджинг света на основе словаря 
@@ -744,7 +751,14 @@ public class LumosChunkIlluminator
     /// </summary>
     private static int GetReflectivity(Block block)
     {
-        if (block.Code.Path.ToString().Contains("glass"))
+        if (block == null)
+            return 50; // treat as opaque default
+
+        // Защита от null Code.Path
+        string path = block.Code?.Path?.ToString() ?? "";
+
+
+        if (path.Contains("glass"))
             return 12;
 
         if (block.IsLiquid())
@@ -754,7 +768,7 @@ public class LumosChunkIlluminator
     }
 
 
-    
+
 
     /// <summary>
     /// Возвращает CollisionBoxes блока в мировых координатах пересчёта не требующего вида
@@ -1066,6 +1080,13 @@ public class LumosChunkIlluminator
                 // одноосевых попаданий, чтобы избежать артефактов на углах.
                 if (entryCrossCount == 1)
                 {
+                    if (block == null || block.Code==null)
+                    {
+                        // Unknown block - treat as opaque, stop ray
+                        energy = 0;
+                        break;
+                    }
+
                     int reflectivity = GetReflectivity(block);
 
                     if (microBE != null && reflectivity > 0)
