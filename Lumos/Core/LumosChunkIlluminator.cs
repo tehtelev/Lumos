@@ -113,12 +113,7 @@ public class LumosChunkIlluminator
 
     // ─── Кэши свойств блоков ─────────────────────────────────────────────
 
-    /// <summary>
-    /// Поглощение света для каждого BlockId. Заполняется один раз в InitForWorld.
-    /// Для блоков долота (BlockMicroBlock) это статическая JSON-заглушка (обычно 99) 
-    /// и НЕ используется напрямую — см. isMicroblockCache и GetBlockAndAbsorption.
-    /// </summary>
-    private static int[] absorptionCache;
+
 
     /// <summary>
     /// Флаг для каждого BlockId: "является ли это микроблоком долота?".
@@ -237,6 +232,18 @@ public class LumosChunkIlluminator
 
         microBE = null;
 
+        // ШАГ 1: Определяем блок
+        if (solidId >= blockTypes.Count || fluidId >= blockTypes.Count)
+        {
+            block = null;
+        }
+        else
+        {
+            block = blockTypes[solidId != 0 ? solidId : fluidId];
+        }
+
+
+        // ШАГ 2: Считаем поглощение
         if (isMicroblockCache[solidId])
         {
             microBE = chunk.GetLocalBlockEntityAtBlockPos(pos) as BlockEntityMicroBlock;
@@ -246,40 +253,39 @@ public class LumosChunkIlluminator
                 MicroblockLightProfile profile =
                     MicroblockLightCache.GetOrCompute(microBE, blockTypes);
 
-                // Усредняем по осям; конкретная ось уточняется в GetEffectiveAbsorption
                 baseAbsorption = (profile.EffectiveAbsX +
                                   profile.EffectiveAbsY +
                                   profile.EffectiveAbsZ) / 3;
 
-                // Быстрый путь: все материалы прозрачны
                 if (profile.MinMaterialAbsorption == 0 && profile.VolumeFraction < 128)
                     baseAbsorption = Math.Min(baseAbsorption, profile.AvgMaterialAbsorption);
             }
             else
             {
-                baseAbsorption = absorptionCache[solidId];
+                baseAbsorption = chunk.GetLightAbsorptionAt(index3d, pos, blockTypes);
             }
         }
         else
         {
-            baseAbsorption = absorptionCache[solidId];
+            // Для обычных блоков (включая крыши!) запрашиваем актуальное поглощение.
+            if (block != null && readBlockAccess != null && pos != null)
+            {
+                baseAbsorption = block.GetLightAbsorption(readBlockAccess, pos);
+            }
+            else
+            {
+                baseAbsorption = chunk.GetLightAbsorptionAt(index3d, pos, blockTypes);
+            }
         }
 
-        // Оверлей жидкости может только увеличить поглощение
-        if (fluidId != 0)
+        // Проверка fluidId != solidId предотвращает подмену динамического поглощения 
+        // (например, 0 для крыши) на статическое значение того же самого блока, 
+        // если они совпадают в данных чанка.
+        if (fluidId != 0 && fluidId != solidId)
         {
-            int fluidAbs = absorptionCache[fluidId];
+            int fluidAbs = blockTypes[fluidId].LightAbsorption;
             if (fluidAbs > baseAbsorption)
                 baseAbsorption = fluidAbs;
-        }
-
-        if (solidId >= blockTypes.Count || fluidId >= blockTypes.Count)
-        {
-            block = null; // unknown block
-        }
-        else
-        {
-            block = blockTypes[solidId != 0 ? solidId : fluidId];
         }
     }
 
@@ -291,34 +297,45 @@ public class LumosChunkIlluminator
     /// Накапливает вклады источников света для одного блока.
     /// Динамический список — нет жесткого лимита на количество перекрывающихся источников.
     /// </summary>
-    private class LightSourcesAtBlock
+    public class LightSourcesAtBlock
     {
         public int[] srcIds;
         public byte[] levels;
         public int count;
 
-        public LightSourcesAtBlock()
-        {
-            srcIds = new int[4];
-            levels = new byte[4];
-            count = 0;
-        }
+        public LightSourcesAtBlock() { srcIds = new int[4]; levels = new byte[4]; }
 
-        public void Reset()
-        {
-            count = 0;
-        }
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void Reset() => count = 0;
 
-        /// <summary>Добавляет новый источник или повышает уровень существующего (побеждает максимум).</summary>
+        /// <summary>Развернутая версия для минимизации оверхеда при типичных малых количествах источников.</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void AddOrUpdate(int srcId, byte level)
         {
+            if (count == 0)
+            {
+                srcIds[0] = srcId; levels[0] = level; count = 1;
+                return;
+            }
+            if (srcIds[0] == srcId) { if (level > levels[0]) levels[0] = level; return; }
+
+            if (count == 1)
+            {
+                if (srcIds[1] == srcId) { if (level > levels[1]) levels[1] = level; return; }
+                srcIds[1] = srcId; levels[1] = level; count = 2;
+                return;
+            }
+            if (count == 2)
+            {
+                if (srcIds[2] == srcId) { if (level > levels[2]) levels[2] = level; return; }
+                srcIds[2] = srcId; levels[2] = level; count = 3;
+                return;
+            }
+
+            // Fallback для >= 3 источников (редкий случай в типичных сценах)
             for (int i = 0; i < count; i++)
             {
-                if (srcIds[i] == srcId)
-                {
-                    if (level > levels[i]) levels[i] = level;
-                    return;
-                }
+                if (srcIds[i] == srcId) { if (level > levels[i]) levels[i] = level; return; }
             }
 
             if (count >= srcIds.Length)
@@ -328,9 +345,7 @@ public class LumosChunkIlluminator
                 Array.Resize(ref levels, newLen);
             }
 
-            srcIds[count] = srcId;
-            levels[count] = level;
-            count++;
+            srcIds[count] = srcId; levels[count] = level; count++;
         }
     }
 
@@ -436,6 +451,9 @@ public class LumosChunkIlluminator
             return;
         }
 
+
+
+        // Вызываем оригинальный метод для получения данных
         GetBlockAndAbsorption(chunk, index3d, pos, out block, out baseAbsorption, out microBE);
 
         Cuboidf[] boxes = null;
@@ -951,6 +969,17 @@ public class LumosChunkIlluminator
 
         while (energy > 0.01f)
         {
+
+            // Раннее завершение луча, покинувшего dirty-регион 
+            if (x < dirtyMinX || x > dirtyMaxX ||
+                y < dirtyMinY || y > dirtyMaxY ||
+                z < dirtyMinZ || z > dirtyMaxZ)
+            {
+                energy = 0f; // Принудительное завершение луча
+                break;
+            }
+
+
             float tNext = Math.Min(tMaxX, Math.Min(tMaxY, tMaxZ));
 
             if (float.IsInfinity(tNext) || float.IsNaN(tNext))
@@ -1001,9 +1030,16 @@ public class LumosChunkIlluminator
             }
 
             IWorldChunk chunk = cachedChunk;
+
             int index3d = ((y & chunkSizeMask) * chunkSize + (z & chunkSizeMask)) * chunkSize + (x & chunkSizeMask);
 
-            tmpPos.Set(x, y, z);
+            // Устанавливаем координаты один раз в поле tmpPos (избегаем создания временных объектов)
+            tmpPos.X = x;
+            tmpPos.Y = y;
+            tmpPos.Z = z;
+
+            tmpPos.dimension = y >> 15;
+
             GetBlockAndAbsorptionCached(chunk, index3d, tmpPos,
                 out Block block, out int baseAbsorption, out BlockEntityMicroBlock microBE,
                 out Cuboidf[] cachedBoxes, out bool cachedHasGeometry);
@@ -1014,6 +1050,9 @@ public class LumosChunkIlluminator
 
             bool isOpaque = false;
             bool isDoor = false;
+
+            //if (block.Code.Domain.ToString().Contains("vsroof"))
+            //    isOpaque = isOpaque;
 
             if (microBE != null)
             {
@@ -1028,7 +1067,7 @@ public class LumosChunkIlluminator
                 // Если блок имеет все грани твердыми, то мы точто попадем в коллизию, и нет смысла проверять геометрию.
                 int solidMask = GetSolidMask(block, microBE, tmpPos);
 
-                if (solidMask == 63 || block.Id==0 || block.IsLiquid())
+                if (solidMask == 63 || block.Id == 0 || block.IsLiquid())
                 {
 
                     float effectiveAbs = GetEffectiveAbsorption(
@@ -1037,7 +1076,7 @@ public class LumosChunkIlluminator
                     if (effectiveAbs > 0f)
                         energy -= effectiveAbs;
 
-                    isOpaque = (block.Id != 0); 
+                    isOpaque = (block.Id != 0);
                 }
                 else
                 {
@@ -1096,7 +1135,7 @@ public class LumosChunkIlluminator
                 // одноосевых попаданий, чтобы избежать артефактов на углах.
                 if (entryCrossCount == 1)
                 {
-                    if (block == null || block.Code==null)
+                    if (block == null || block.Code == null)
                     {
                         // Unknown block - treat as opaque, stop ray
                         energy = 0;
@@ -1199,17 +1238,17 @@ public class LumosChunkIlluminator
             // Добавляем сам чанк + соседей (лучи могут уйти за пределы исходного чанка)
             int radius = BucketRadius(nearbyB[srcIdx]) / chunkSize + 1;
             for (int dx = -radius; dx <= radius; dx++)
-            for (int dy = -radius; dy <= radius; dy++)
-            for (int dz = -radius; dz <= radius; dz++)
-            {
-                int nx = cx + dx, ny = cy + dy, nz = cz + dz;
-                //if (!(chunkProvider as WorldMap).IsValidChunkPosFast(nx, ny, nz))
-                //    continue;
+                for (int dy = -radius; dy <= radius; dy++)
+                    for (int dz = -radius; dz <= radius; dz++)
+                    {
+                        int nx = cx + dx, ny = cy + dy, nz = cz + dz;
+                        //if (!(chunkProvider as WorldMap).IsValidChunkPosFast(nx, ny, nz))
+                        //    continue;
 
-                long key = chunkProvider.ChunkIndex3D(nx, ny, nz);
-                if (!chunkCache.ContainsKey(key))
-                    chunkCache[key] = chunkProvider.GetChunk(nx, ny, nz);
-            }
+                        long key = chunkProvider.ChunkIndex3D(nx, ny, nz);
+                        if (!chunkCache.ContainsKey(key))
+                            chunkCache[key] = chunkProvider.GetChunk(nx, ny, nz);
+                    }
         }
 
         for (int srcIdx = 0; srcIdx < nearbyCount; srcIdx++)
@@ -1302,7 +1341,6 @@ public class LumosChunkIlluminator
         this.mapsizey = mapsizey;
         this.mapsizez = mapsizez;
 
-        absorptionCache = new int[blockTypes.Count];
         isMicroblockCache = new bool[blockTypes.Count];
         isMultiblockCache = new bool[blockTypes.Count];
         isDoorCache = new bool[blockTypes.Count];
@@ -1310,7 +1348,6 @@ public class LumosChunkIlluminator
         for (int i = 0; i < blockTypes.Count; i++)
         {
             Block b = blockTypes[i];
-            absorptionCache[i] = b.LightAbsorption;
             isMicroblockCache[i] = b is BlockMicroBlock;
             isMultiblockCache[i] = b is BlockMultiblock;
 
@@ -2814,7 +2851,6 @@ public class LumosChunkIlluminator
     {
         sphereCache.Clear();
 
-        absorptionCache = null;
         isDoorCache = null;
         isMultiblockCache = null;
         isMicroblockCache = null;
