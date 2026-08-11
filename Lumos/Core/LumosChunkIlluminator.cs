@@ -9,6 +9,7 @@ using Vintagestory.API.Common;
 using Vintagestory.API.Datastructures;
 using Vintagestory.API.MathTools;
 using Vintagestory.API.Server;
+using Vintagestory.Client.NoObf;
 using Vintagestory.GameContent;
 
 
@@ -399,6 +400,12 @@ public class LumosChunkIlluminator
     /// Заполняется лениво в GetBlockAndAbsorptionCached, чистится в TraceNearbyBlockLights.
     /// </summary>
     private readonly Dictionary<long, BlockLookupCacheEntry> blockLookupCache = new(8192);
+
+    /// <summary>
+    /// Кэш распакованных чанков, заполняемый в LoadSourcesIntersectingDirtySpheres
+    /// и используемый ProcessRay. Устраняет повторяющиеся Dictionary lookups и lock-конкуренцию.
+    /// </summary>
+    private readonly Dictionary<long, IWorldChunk> chunkCache = new(4096);
 
     /// <summary>
     /// Кэширующая обёртка над GetBlockAndAbsorption. Безопасна в пределах одного прохода
@@ -974,13 +981,22 @@ public class LumosChunkIlluminator
             int cy = y >> chunkSizeLog2;
             int cz = z >> chunkSizeLog2;
 
-            // Кэшируем чанк, чтобы не искать его при перемещении внутри одного чанка
+            // используем кешированный чанк
             if (cx != lastChunkX || cy != lastChunkY || cz != lastChunkZ)
             {
-                cachedChunk = chunkProvider.GetUnpackedChunkFast(cx, cy, cz, notRecentlyAccessed: true);
+                long chunkKey = chunkProvider.ChunkIndex3D(cx, cy, cz);
+
+                // сначала ищем в shared кэше
+                cachedChunk = chunkCache.TryGetValue(chunkKey, out var cached) ? cached : null;
+
+                // Fallback на оригинальный метод только если чанк не был загружен (крайний случай)
+                if (cachedChunk == null)
+                    cachedChunk = chunkProvider.GetUnpackedChunkFast(cx, cy, cz, notRecentlyAccessed: true);
+
                 lastChunkX = cx;
                 lastChunkY = cy;
                 lastChunkZ = cz;
+
                 if (cachedChunk == null) break;
             }
 
@@ -1169,8 +1185,32 @@ public class LumosChunkIlluminator
     private void TraceNearbyBlockLights()
     {
         RecycleVisitedNodes();
+        blockLookupCache.Clear();
 
-        blockLookupCache.Clear(); // сброс кэша перед новым проходом по всем источникам
+        // === NEW: Заполняем shared chunk cache на основе уже загруженных чанков ===
+        chunkCache.Clear();
+        for (int srcIdx = 0; srcIdx < nearbyCount; srcIdx++)
+        {
+            NearbyLightSourceStruct source = nearbyLightSourcesArray[srcIdx];
+            int cx = source.posX / chunkSize;
+            int cy = source.posY / chunkSize;
+            int cz = source.posZ / chunkSize;
+
+            // Добавляем сам чанк + соседей (лучи могут уйти за пределы исходного чанка)
+            int radius = BucketRadius(nearbyB[srcIdx]) / chunkSize + 1;
+            for (int dx = -radius; dx <= radius; dx++)
+            for (int dy = -radius; dy <= radius; dy++)
+            for (int dz = -radius; dz <= radius; dz++)
+            {
+                int nx = cx + dx, ny = cy + dy, nz = cz + dz;
+                //if (!(chunkProvider as WorldMap).IsValidChunkPosFast(nx, ny, nz))
+                //    continue;
+
+                long key = chunkProvider.ChunkIndex3D(nx, ny, nz);
+                if (!chunkCache.ContainsKey(key))
+                    chunkCache[key] = chunkProvider.GetChunk(nx, ny, nz);
+            }
+        }
 
         for (int srcIdx = 0; srcIdx < nearbyCount; srcIdx++)
         {
