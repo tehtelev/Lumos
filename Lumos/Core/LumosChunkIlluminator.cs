@@ -111,6 +111,8 @@ public class LumosChunkIlluminator
     private BlockPos tmpPos2 = new(0);
     private BlockPos tmpPosDimensionAware = new(0);
 
+    private int currentDim = 0;
+
     // ─── Кэши свойств блоков ─────────────────────────────────────────────
 
 
@@ -360,20 +362,22 @@ public class LumosChunkIlluminator
     /// Диапазон по каждой оси: [-1 048 576, +1 048 575].
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static long PackPos(int x, int y, int z)
+    private static long PackPos(int x, int y, int z, int dim = 0)
     {
         return ((long)(x & 0x1FFFFF)) |
                ((long)(y & 0x1FFFFF) << 21) |
-               ((long)(z & 0x1FFFFF) << 42);
+               ((long)(z & 0x1FFFFF) << 42) |
+               ((long)(dim & 0xFF) << 63);
     }
 
     /// <summary>Обратная операция для PackPos с восстановлением знака.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static void UnpackPos(long key, out int x, out int y, out int z)
+    private static void UnpackPos(long key, out int x, out int y, out int z, out int dim)
     {
         x = (int)(key & 0x1FFFFF);
         y = (int)((key >> 21) & 0x1FFFFF);
         z = (int)((key >> 42) & 0x1FFFFF);
+        dim = (int)((key >> 63) & 0xFF);
 
         if ((x & 0x100000) != 0) x |= unchecked((int)0xFFE00000);
         if ((y & 0x100000) != 0) y |= unchecked((int)0xFFE00000);
@@ -439,7 +443,7 @@ public class LumosChunkIlluminator
         out Cuboidf[] collisionBoxes,
         out bool hasCollisionBoxes)
     {
-        long key = PackPos(pos.X, pos.Y, pos.Z);
+        long key = PackPos(pos.X, pos.Y, pos.Z, currentDim);
 
         if (blockLookupCache.TryGetValue(key, out BlockLookupCacheEntry cached))
         {
@@ -1007,18 +1011,16 @@ public class LumosChunkIlluminator
             }
 
             int cx = x >> chunkSizeLog2;
-            int cy = y >> chunkSizeLog2;
+            int cy = y >> chunkSizeLog2; // Это уже Internal chunk Y
             int cz = z >> chunkSizeLog2;
 
-            // используем кешированный чанк
             if (cx != lastChunkX || cy != lastChunkY || cz != lastChunkZ)
             {
+                // Убираем + currentDim * 1024
                 long chunkKey = chunkProvider.ChunkIndex3D(cx, cy, cz);
 
-                // сначала ищем в shared кэше
                 cachedChunk = chunkCache.TryGetValue(chunkKey, out var cached) ? cached : null;
 
-                // Fallback на оригинальный метод только если чанк не был загружен (крайний случай)
                 if (cachedChunk == null)
                     cachedChunk = chunkProvider.GetUnpackedChunkFast(cx, cy, cz, notRecentlyAccessed: true);
 
@@ -1038,7 +1040,7 @@ public class LumosChunkIlluminator
             tmpPos.Y = y;
             tmpPos.Z = z;
 
-            tmpPos.dimension = y >> 15;
+            tmpPos.SetDimension(currentDim);
 
             GetBlockAndAbsorptionCached(chunk, index3d, tmpPos,
                 out Block block, out int baseAbsorption, out BlockEntityMicroBlock microBE,
@@ -1212,7 +1214,7 @@ public class LumosChunkIlluminator
             z < dirtyMinZ || z > dirtyMaxZ)
             return;
 
-        long key = PackPos(x, y, z);
+        long key = PackPos(x, y, z, currentDim);
         var lsab = GetOrCreateLsab(key);
         lsab.AddOrUpdate(sourceId, (byte)lightLevel);
     }
@@ -1242,9 +1244,8 @@ public class LumosChunkIlluminator
                     for (int dz = -radius; dz <= radius; dz++)
                     {
                         int nx = cx + dx, ny = cy + dy, nz = cz + dz;
-                        //if (!(chunkProvider as WorldMap).IsValidChunkPosFast(nx, ny, nz))
-                        //    continue;
 
+                     
                         long key = chunkProvider.ChunkIndex3D(nx, ny, nz);
                         if (!chunkCache.ContainsKey(key))
                             chunkCache[key] = chunkProvider.GetChunk(nx, ny, nz);
@@ -1386,6 +1387,9 @@ public class LumosChunkIlluminator
 
         chunk.LightPositions.Add(lightPosition);
 
+        // Извлекаем dimension из InternalY (если posY >= 32768)
+        currentDim = posY >= 32768 ? posY / 32768 : 0;
+
         QueueDirtyLightSphere(posX, posY, posZ, lightHsv[2]);
 
         return result;
@@ -1414,6 +1418,9 @@ public class LumosChunkIlluminator
         // Сохраняем ванильный особый случай
         if (oldRadius == 18)
             oldRadius = 20;
+
+        // Извлекаем dimension из InternalY (если posY >= 32768)
+        currentDim = posY >= 32768 ? posY / 32768 : 0;
 
         QueueDirtyLightSphere(posX, posY, posZ, oldRadius);
 
@@ -1592,7 +1599,7 @@ public class LumosChunkIlluminator
             return;
 
         int radius = lightRadius + DIRTY_RADIUS_PADDING;
-        long key = PackPos(posX, posY, posZ);
+        long key = PackPos(posX, posY, posZ, currentDim);
 
         if (pendingDirtySpheres.TryGetValue(key, out DirtyLightSphere existing))
         {
@@ -1619,9 +1626,12 @@ public class LumosChunkIlluminator
         if (spheres.Count == 0 || blockTypes == null || chunkProvider == null)
             return;
 
-        // Строим один консервативный AABB вокруг всех "грязных" сфер
-        int minX = mapsizex - 1, minY = mapsizey - 1, minZ = mapsizez - 1;
-        int maxX = 0, maxY = 0, maxZ = 0;
+        int dimBlockOffset = currentDim * 32768; 
+        int minValidY = dimBlockOffset;
+        int maxValidY = dimBlockOffset + mapsizey - 1;
+
+        int minX = mapsizex - 1, minY = maxValidY, minZ = mapsizez - 1;
+        int maxX = 0, maxY = minValidY, maxZ = 0;
 
         for (int i = 0; i < spheres.Count; i++)
         {
@@ -1637,10 +1647,10 @@ public class LumosChunkIlluminator
         }
 
         minX = Math.Max(0, minX);
-        minY = Math.Max(0, minY);
+        minY = Math.Max(minValidY, minY);
         minZ = Math.Max(0, minZ);
         maxX = Math.Min(mapsizex - 1, maxX);
-        maxY = Math.Min(mapsizey - 1, maxY);
+        maxY = Math.Min(maxValidY, maxY); 
         maxZ = Math.Min(mapsizez - 1, maxZ);
 
         int minChunkX = minX / chunkSize;
@@ -1656,6 +1666,7 @@ public class LumosChunkIlluminator
             {
                 for (int chunkZ = minChunkZ; chunkZ <= maxChunkZ; chunkZ++)
                 {
+
                     IWorldChunk chunk = chunkProvider.GetChunk(chunkX, chunkY, chunkZ);
                     if (chunk == null) continue;
 
@@ -1671,7 +1682,7 @@ public class LumosChunkIlluminator
                         int sourceY = chunkY * chunkSize + localY;
                         int sourceZ = chunkZ * chunkSize + localZ;
 
-                        long sourceKey = PackPos(sourceX, sourceY, sourceZ);
+                        long sourceKey = PackPos(sourceX, sourceY, sourceZ, currentDim);
 
                         if (nearbySourceIndexByPosition.ContainsKey(sourceKey))
                             continue;
@@ -1723,7 +1734,7 @@ public class LumosChunkIlluminator
         if (brightness == 0)
             return false;
 
-        long positionKey = PackPos(posX, posY, posZ);
+        long positionKey = PackPos(posX, posY, posZ, currentDim);
 
         if (nearbySourceIndexByPosition.ContainsKey(positionKey))
             return false;
@@ -1819,8 +1830,9 @@ public class LumosChunkIlluminator
 
         foreach (long key in dirtyLightCells)
         {
-            UnpackPos(key, out int x, out int y, out int z);
+            UnpackPos(key, out int x, out int y, out int z, out int dim);
 
+            
             IWorldChunk chunk = chunkProvider.GetUnpackedChunkFast(
                 x / num, y / num, z / num, notRecentlyAccessed: true);
 
@@ -1861,6 +1873,10 @@ public class LumosChunkIlluminator
         dirtyMinY = int.MaxValue; dirtyMaxY = int.MinValue;
         dirtyMinZ = int.MaxValue; dirtyMaxZ = int.MinValue;
 
+        int dimOffset = currentDim * 32768; //Смещение измерения для блоков
+        int minValidY = dimOffset;
+        int maxValidY = dimOffset + mapsizey - 1;
+
         for (int si = 0; si < spheres.Count; si++)
         {
             DirtyLightSphere sphere = spheres[si];
@@ -1870,8 +1886,8 @@ public class LumosChunkIlluminator
 
             int minX = Math.Max(0, sphere.X - radius);
             int maxX = Math.Min(mapsizex - 1, sphere.X + radius);
-            int minY = Math.Max(0, sphere.Y - radius);
-            int maxY = Math.Min(mapsizey - 1, sphere.Y + radius);
+            int minY = Math.Max(minValidY, sphere.Y - radius); 
+            int maxY = Math.Min(maxValidY, sphere.Y + radius); 
             int minZAll = Math.Max(0, sphere.Z - radius);
             int maxZAll = Math.Min(mapsizez - 1, sphere.Z + radius);
 
@@ -1901,7 +1917,7 @@ public class LumosChunkIlluminator
                     int maxZ = Math.Min(mapsizez - 1, sphere.Z + zRadius);
 
                     for (int z = minZ; z <= maxZ; z++)
-                        dirtyLightCells.Add(PackPos(x, y, z));
+                        dirtyLightCells.Add(PackPos(x, y, z, currentDim));
                 }
             }
         }
@@ -1992,6 +2008,8 @@ public class LumosChunkIlluminator
 
         int num14 = minPos.dimension * 1024;
 
+        currentDim = minPos.dimension;
+
         // Загружаем и распаковываем все затронутые чанки
         IWorldChunk chunk;
         for (int i = num8; i <= num11; i++)
@@ -2035,8 +2053,9 @@ public class LumosChunkIlluminator
         }
 
         // Блочный свет: строим ограничивающую сферу и сбрасываем пакет
+        int dimOffset = minPos.dimension * 32768;
         int centerX = (num2 + num5) / 2;
-        int centerY = (num3 + num6) / 2;
+        int centerY = ((num3 + num6) / 2) + dimOffset; // Учитываем смещение измерения!
         int centerZ = (num4 + num7) / 2;
 
         double halfX = (num5 - num2) * 0.5;
@@ -2414,16 +2433,17 @@ public class LumosChunkIlluminator
         int posX, int posY, int posZ, int oldAbsorb, int newAbsorb)
     {
         FastSetOfLongs touchedChunks = new FastSetOfLongs();
-        if (newAbsorb == oldAbsorb) return touchedChunks;
 
-        if (posX < 0 || posY < 0 || posZ < 0 ||
-            posX >= mapsizex || posY >= mapsizey || posZ >= mapsizez)
+        if (newAbsorb == oldAbsorb)
             return touchedChunks;
-
+        
         int chunkX = posX >> chunkSizeLog2;
         int chunkZ = posZ >> chunkSizeLog2;
         int dim = posY / 32768;
-        int chunkY = posY >> chunkSizeLog2;
+
+        //  Вычисляем локальный Y и локальный chunkY!
+        int localY = posY - dim * 32768;
+        int chunkY = localY >> chunkSizeLog2;
 
         // Ставим в очередь центральную колонку и 4 соседних
         for (int dx = -1; dx <= 1; dx++)
@@ -2597,9 +2617,15 @@ public class LumosChunkIlluminator
     {
         int num = chunkSize;
         int num2 = 0;
+
+        // Учитываем смещение измерения
+        int dim = posY / 32768;
+        int dimOffset = dim * 32768;
+        int maxY = dimOffset + mapsizey;
+
         int num3 = SunLightLevelAt(posX, posY, posZ);
 
-        while (posY < mapsizey)
+        while (posY < maxY) // Сравниваем с верхней границей текущего измерения
         {
             posY++;
             IWorldChunk unpackedChunkFast = chunkProvider.GetUnpackedChunkFast(
