@@ -966,14 +966,7 @@ public class LumosChunkIlluminator
 
         while (energy > 0.01f)
         {
-            // Раннее завершение луча, покинувшего dirty-регион 
-            if (x < dirtyMinX || x > dirtyMaxX ||
-                y < dirtyMinY || y > dirtyMaxY ||
-                z < dirtyMinZ || z > dirtyMaxZ)
-            {
-                energy = 0f; // Принудительное завершение луча
-                break;
-            }
+
 
             float tNext = Math.Min(tMaxX, Math.Min(tMaxY, tMaxZ));
 
@@ -1197,10 +1190,6 @@ public class LumosChunkIlluminator
         int lightLevel = (int)energy;
         if (lightLevel <= 0) return;
 
-        if (x < dirtyMinX || x > dirtyMaxX ||
-            y < dirtyMinY || y > dirtyMaxY ||
-            z < dirtyMinZ || z > dirtyMaxZ)
-            return;
 
         long key = PackPos(x, y, z, currentDim);
         var lsab = GetOrCreateLsab(key);

@@ -6,7 +6,7 @@
     "Tehtelev"
   ],
   "description": "Reworking the game's lighting system and fixing related bugs",
-  "Version": "1.1.1",
+  "Version": "1.1.2",
   "dependencies": {
     "game": "1.22.0"
   }
