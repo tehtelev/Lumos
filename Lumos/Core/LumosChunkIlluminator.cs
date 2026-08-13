@@ -41,6 +41,49 @@ public class LumosChunkIlluminator
     /// <summary>Дополнительный отступ (в блоках), добавляемый к радиусу "грязной" сферы.</summary>
     private const int DIRTY_RADIUS_PADDING = 1;
 
+    // ─── Параметры мира и измерения ──────────────────────────────────────
+
+    /// <summary>Базовый уровень солнечного света для текущего измерения.</summary>
+    private ushort defaultSunLight;
+
+    /// <summary>Размеры мира в блоках по каждой оси (включая смещение измерения).</summary>
+    private int mapsizex, mapsizey, mapsizez;
+
+    /// <summary>Текущее измерение мира, используемое при упаковке позиций.</summary>
+    private int currentDim = 0;
+
+    // ─── Геометрия чанков ────────────────────────────────────────────────
+
+    /// <summary>Список всех блоков сервера, используемый для разрешения по ID.</summary>
+    private IList<Block> blockTypes;
+
+    /// <summary>Размер чанка в блоках (сторона куба).</summary>
+    private int chunkSize;
+
+    /// <summary>Логарифм размера чанка по основанию 2, используется для побитовых операций.</summary>
+    private int chunkSizeLog2;
+
+    /// <summary>Маска (chunkSize - 1) для получения локальной координаты внутри чанка.</summary>
+    private int chunkSizeMask;
+
+    /// <summary>Множители шага (stride) для плоского индексирования чанка (X=1, Z=chunkSize, Y=chunkSize²).</summary>
+    private int XPlus = 1;
+    private int YPlus;
+    private int ZPlus;
+
+    /// <summary>Провайдер чанков для загрузки и доступа к данным мира.</summary>
+    internal IChunkProvider chunkProvider;
+
+    /// <summary>Базовый аксессуар для чтения блоков (используется в трассировке).</summary>
+    private IBlockAccessor readBlockAccess;
+
+    // ─── Переиспользуемые временные позиции (избегают аллокации BlockPos) ─
+
+    private BlockPos tmpDiPos = new(0);
+    private BlockPos tmpPos = new(0);
+    private BlockPos tmpPos2 = new(0);
+    private BlockPos tmpPosDimensionAware = new(0);
+
     // ─── Батчинг грязных регионов ────────────────────────────────────────
 
     /// <summary>
@@ -63,7 +106,7 @@ public class LumosChunkIlluminator
         }
     }
 
-    /// <summary>Очередь "грязных" сфер, сгруппированных по упакованной позиции источника.</summary>
+    /// <summary>Очередь "грязных" сфер, сгруппированных по упакованной позиции источника света.</summary>
     private readonly Dictionary<long, DirtyLightSphere> pendingDirtySpheres = new(256);
 
     /// <summary>Переиспользуемый буфер: снимок pendingDirtySpheres для одного сброса (flush).</summary>
@@ -80,38 +123,6 @@ public class LumosChunkIlluminator
 
     /// <summary>Защита от рекурсивного входа для FlushPendingBlockLightUpdates.</summary>
     private bool isFlushingBlockLight;
-
-    // ─── Геометрия мира и чанков ─────────────────────────────────────────
-
-    /// <summary>Базовый уровень солнечного света для текущего измерения.</summary>
-    private ushort defaultSunLight;
-
-    private int mapsizex;
-    private int mapsizey;
-    private int mapsizez;
-
-    /// <summary>Множители шага (stride) для плоского индексирования чанка (X=1, Z=chunkSize, Y=chunkSize²).</summary>
-    private int XPlus = 1;
-    private int YPlus;
-    private int ZPlus;
-
-    private IList<Block> blockTypes;
-
-    private int chunkSize;
-    private int chunkSizeLog2;
-    private int chunkSizeMask;
-
-    internal IChunkProvider chunkProvider;
-    private IBlockAccessor readBlockAccess;
-
-    // ─── Переиспользуемые временные позиции (избегают аллокации BlockPos) ─
-
-    private BlockPos tmpDiPos = new(0);
-    private BlockPos tmpPos = new(0);
-    private BlockPos tmpPos2 = new(0);
-    private BlockPos tmpPosDimensionAware = new(0);
-
-    private int currentDim = 0;
 
     // ─── Кэши свойств блоков ─────────────────────────────────────────────
 
@@ -178,7 +189,7 @@ public class LumosChunkIlluminator
     /// <summary>Пул переиспользуемых массивов для Zero-GC.</summary>
     private readonly Stack<byte[]> sunStagingPool = new(256);
 
-    /// <summary>Текущее смещение измерения для батчинга.</summary>
+    /// <summary>Текущее смещение измерения (dim * 1024) для батчинга солнечных обновлений.</summary>
     private int currentDimOffset;
 
     /// <summary>Читает солнечный свет из стейджинг-буфера (если он активен) или напрямую из чанка.</summary>
@@ -292,7 +303,7 @@ public class LumosChunkIlluminator
     #region Light staging
 
     /// <summary>
-    /// Накапливает вклады источников света для одного блока.
+    /// Стейджинг накопленных вкладов источников света для одной позиции.
     /// Динамический список — нет жесткого лимита на количество перекрывающихся источников.
     /// </summary>
     public class LightSourcesAtBlock
@@ -347,7 +358,7 @@ public class LumosChunkIlluminator
         }
     }
 
-    /// <summary>Стейджинг-словарь: упакованная мировая позиция → накопленные источники света.</summary>
+    /// <summary>Стейджинг-словарь: упакованная мировая позиция → накопленные источники света (блочный свет).</summary>
     private Dictionary<long, LightSourcesAtBlock> visitedNodes = new(4096);
 
     /// <summary>Пул переиспользуемых экземпляров LightSourcesAtBlock.</summary>
@@ -391,8 +402,6 @@ public class LumosChunkIlluminator
         visitedNodes[key] = lsab;
         return lsab;
     }
-
-    // кэш блок/поглощение по позиции для одного прохода трассировки 
 
     /// <summary>
     /// Закэшированный результат GetBlockAndAbsorption и GetRayCollisionBoxes для одной позиции.
@@ -496,6 +505,7 @@ public class LumosChunkIlluminator
 
     #region Nearby sources
 
+    /// <summary>Позиция ближайшего источника света в массивах трассировки.</summary>
     private struct NearbyLightSourceStruct
     {
         public int posX, posY, posZ;
@@ -511,6 +521,7 @@ public class LumosChunkIlluminator
 
     // ─── Легковесная структура позиции (для BFS) ─────────────────────────
 
+    /// <summary>Легковесная структура позиции (для BFS).</summary>
     private struct FastBlockPos
     {
         public int X, Y, Z, Dim;
@@ -524,6 +535,7 @@ public class LumosChunkIlluminator
 
     #region Ray Tracing
 
+    /// <summary>Активный луч трассировки в кольцевом буфере.</summary>
     private struct LightRay
     {
         public float OriginX, OriginY, OriginZ;
@@ -675,6 +687,7 @@ public class LumosChunkIlluminator
     private static readonly float[] reflCosTheta = new float[REFLECTION_RAYS_COUNT];
     private static readonly float[] reflSinTheta = new float[REFLECTION_RAYS_COUNT];
 
+    /// <summary>Минимальное количество лучей отражения для слабых источников.</summary>
     private const int MIN_REFLECTION_RAYS = 16;
 
     /// <summary>Статический конструктор: заполняет таблицы углов отражения один раз.</summary>
@@ -934,17 +947,14 @@ public class LumosChunkIlluminator
         int y = (int)Math.Floor(posY);
         int z = (int)Math.Floor(posZ);
 
-        // Направление шага по сетке вокселей (+1 или -1)
         int stepX = dirX > 0 ? 1 : -1;
         int stepY = dirY > 0 ? 1 : -1;
         int stepZ = dirZ > 0 ? 1 : -1;
 
-        // Расстояние, которое луч проходит внутри одного вокселя вдоль соответствующей оси
         float tDeltaX = Math.Abs(1.0f / dirX);
         float tDeltaY = Math.Abs(1.0f / dirY);
         float tDeltaZ = Math.Abs(1.0f / dirZ);
 
-        // Расстояние от начала луча до первой границы вокселя по каждой оси
         float tMaxX = ((dirX > 0 ? (x + 1 - posX) : (posX - x))) * tDeltaX;
         float tMaxY = ((dirY > 0 ? (y + 1 - posY) : (posY - y))) * tDeltaY;
         float tMaxZ = ((dirZ > 0 ? (z + 1 - posZ) : (posZ - z))) * tDeltaZ;
@@ -1019,7 +1029,6 @@ public class LumosChunkIlluminator
 
             int index3d = ((y & chunkSizeMask) * chunkSize + (z & chunkSizeMask)) * chunkSize + (x & chunkSizeMask);
 
-            // Устанавливаем координаты один раз в поле tmpPos (избегаем создания временных объектов)
             tmpPos.X = x;
             tmpPos.Y = y;
             tmpPos.Z = z;
@@ -1205,7 +1214,7 @@ public class LumosChunkIlluminator
         RecycleVisitedNodes();
         blockLookupCache.Clear();
 
-        // === NEW: Заполняем shared chunk cache на основе уже загруженных чанков ===
+        // Заполняем shared chunk cache на основе уже загруженных чанков
         chunkCache.Clear();
         for (int srcIdx = 0; srcIdx < nearbyCount; srcIdx++)
         {
@@ -1594,7 +1603,7 @@ public class LumosChunkIlluminator
 
     /// <summary>
     /// Сканирует все чанки, источники света которых могут пересекать "грязную" область,
-    /// и заполняет массивы ближайших источников.
+    /// и заполняет массивы ближайших источников (nearbyLightSourcesArray / nearbyH/S/B).
     /// </summary>
     private void LoadSourcesIntersectingDirtySpheres(List<DirtyLightSphere> spheres)
     {
@@ -2137,7 +2146,6 @@ public class LumosChunkIlluminator
             IWorldChunk worldChunk = chunks[num4];
             worldChunk.Unpack();
 
-            // один раз на чанк
             byte[] st = stagingActive ? GetStagingForChunk(chunkX, num4 + currentDimOffset, chunkZ) : null;
             IChunkLight lg = worldChunk.Lighting;
 
@@ -2212,7 +2220,8 @@ public class LumosChunkIlluminator
             array2[2] = (num - 1) * Math.Max(0, z);
 
             int num4 = (chunkX + x) * num;
-            int numZBase = (chunkZ + z) * num; // Базовая мировая Z-координата соседнего чанка
+            // Базовая мировая Z-координата соседнего чанка
+            int numZBase = (chunkZ + z) * num;
 
             int num5 = 0;
             if (x == 0) array[num5++] = 0;
@@ -2276,7 +2285,6 @@ public class LumosChunkIlluminator
                         {
                             WriteSun(stN, lgN, index3d2, finalLightToN);
 
-                            // Сохраняем мировые координаты для BFS
                             stack2.Push(new FastBlockPos(num4 + num9, num6 * num + array2[1], numZBase + num10, dimension));
                             b |= blockFacing.Flag;
                         }
@@ -2443,7 +2451,7 @@ public class LumosChunkIlluminator
 
     // ─── Внутренняя механика батчинга солнечного света ───────────────────
 
-    /// <summary>Очередь обновлений солнечного света: упакованный ключ колонки -> максимальный startChunkY.</summary>
+    /// <summary>Очередь обновлений солнечного света: упакованный ключ колонки → максимальный startChunkY.</summary>
     private readonly Dictionary<long, int> pendingSunlightUpdates = new(64);
 
     /// <summary>Упаковывает координаты колонки чанков и измерение в один long.</summary>
@@ -2498,19 +2506,21 @@ public class LumosChunkIlluminator
         return touchedChunks;
     }
 
-    /// <summary>Тип поля chunk.Lighting; если в вашей версии API он называется иначе — замените.</summary>
+    /// <summary>Возвращает стейджинг-массив для данного чанка (если он активен), иначе null.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private byte[] GetStagingForChunk(int cx, int cyWithDim, int cz)
     {
         return currentSunStaging.TryGetValue(chunkProvider.ChunkIndex3D(cx, cyWithDim, cz), out var s) ? s : null;
     }
 
+    /// <summary>Читает солнечный свет из staging (если не null) или напрямую из Lighting чанка.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static int ReadSun(byte[] staging, IChunkLight lighting, int idx)
     {
         return staging is not null ? staging[idx] : lighting.GetSunlight(idx);
     }
 
+    /// <summary>Записывает солнечный свет в staging (если не null) или напрямую в Lighting чанка.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static void WriteSun(byte[] staging, IChunkLight lighting, int idx, int val)
     {
@@ -2650,6 +2660,7 @@ public class LumosChunkIlluminator
 
     /// <summary>
     /// Обёртка, которая сбрасывает и блочный, и солнечный свет одной пачкой.
+    /// Возвращает объединённый набор изменённых чанков от обоих процессов.
     /// </summary>
     public FastSetOfLongs FlushPendingLightUpdates()
     {
