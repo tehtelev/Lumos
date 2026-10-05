@@ -6,9 +6,9 @@
     </PropertyGroup>
 
     <ItemGroup>
-        <PackageReference Include="Cake.Frosting" Version="6.2.0" />
-        <PackageReference Include="Cake.Json" Version="7.0.1" />
-        <PackageReference Include="NuGet.Packaging" Version="7.6.0" />
+        <PackageReference Include="Cake.Frosting" Version="6.3.0" />
+        <PackageReference Include="Cake.Json" Version="11.0.0" />
+        <PackageReference Include="NuGet.Packaging" Version="7.9.0" />
     </ItemGroup>
 
     <ItemGroup>
