@@ -619,12 +619,12 @@ public class LumosChunkIlluminator
 			float y = 1.0f - 2.0f * (i + 0.5f) / count;
 			float r = (float)Math.Sqrt(Math.Max(0f, 1.0f - y * y));
 			float theta = goldenAngle * i;
-			points[i] = new float[]
-			{
-				r * (float)Math.Cos(theta),
+			points[i] =
+            [
+                r * (float)Math.Cos(theta),
 				y,
 				r * (float)Math.Sin(theta)
-			};
+            ];
 		}
 		actualCount = count;
 		return points;
@@ -1340,7 +1340,7 @@ public class LumosChunkIlluminator
 	public FastSetOfLongs PlaceBlockLight(
 		byte[] lightHsv, int posX, int posY, int posZ)
 	{
-		FastSetOfLongs result = new FastSetOfLongs();
+		FastSetOfLongs result = [];
 
 		if (blockTypes is null || lightHsv is null ||
 			lightHsv.Length < 3 || lightHsv[2] <= 0)
@@ -1368,7 +1368,7 @@ public class LumosChunkIlluminator
 	public FastSetOfLongs RemoveBlockLight(
 		byte[] oldLightHsv, int posX, int posY, int posZ)
 	{
-		FastSetOfLongs result = new FastSetOfLongs();
+		FastSetOfLongs result = [];
 
 		if (blockTypes is null || oldLightHsv is null || oldLightHsv.Length < 3)
 			return result;
@@ -1403,7 +1403,7 @@ public class LumosChunkIlluminator
 		int oldLightAbsorb, int newLightAbsorb,
 		int posX, int posY, int posZ)
 	{
-		FastSetOfLongs result = new FastSetOfLongs();
+		FastSetOfLongs result = [];
 
 		if (blockTypes is null)
 			return result;
@@ -1900,7 +1900,7 @@ public class LumosChunkIlluminator
 	/// </summary>
 	public FastSetOfLongs FlushPendingBlockLightUpdates()
 	{
-		FastSetOfLongs touchedChunks = new FastSetOfLongs();
+		FastSetOfLongs touchedChunks = [];
 
 		if (isFlushingBlockLight || pendingDirtySpheres.Count == 0)
 			return touchedChunks;
@@ -1959,7 +1959,7 @@ public class LumosChunkIlluminator
 	public void FullRelight(BlockPos minPos, BlockPos maxPos)
 	{
 		int num = chunkSize;
-		Dictionary<Vec3i, IWorldChunk> dictionary = new Dictionary<Vec3i, IWorldChunk>();
+		Dictionary<Vec3i, IWorldChunk> dictionary = new ();
 
 		// Расширяем регион на 1 чанк для корректности границ
 		int num2 = GameMath.Clamp(Math.Min(minPos.X, maxPos.X) - num, 0, mapsizex - 1);
@@ -2035,7 +2035,7 @@ public class LumosChunkIlluminator
 		int fullRelightRadius = (int)Math.Ceiling(
 			Math.Sqrt(halfX * halfX + halfY * halfY + halfZ * halfZ));
 
-		FastSetOfLongs touchedChunks = new FastSetOfLongs();
+		FastSetOfLongs touchedChunks = [];
 		UpdateLightAt(fullRelightRadius, centerX, centerY, centerZ, touchedChunks);
 
 		foreach (IWorldChunk value in dictionary.Values)
@@ -2452,7 +2452,7 @@ public class LumosChunkIlluminator
 		int posX, int posY, int posZ, int oldAbsorb, int newAbsorb)
 	{
 		// Возвращаем пустой набор — реальные измененные чанки будут добавлены во время Flush
-		FastSetOfLongs touchedChunks = new FastSetOfLongs();
+		FastSetOfLongs touchedChunks = [];
 
 		if (newAbsorb == oldAbsorb)
 			return touchedChunks;
@@ -2519,7 +2519,7 @@ public class LumosChunkIlluminator
 	/// </summary>
 	public FastSetOfLongs FlushPendingSunLightUpdates()
 	{
-		FastSetOfLongs touchedChunks = new FastSetOfLongs();
+		FastSetOfLongs touchedChunks = [];
 		if (pendingSunlightUpdates.Count == 0) return touchedChunks;
 
 		var updates = new Dictionary<long, int>(pendingSunlightUpdates);
@@ -2805,7 +2805,7 @@ public class LumosChunkIlluminator
 		FastSetOfLongs touchedChunks)
 	{
 		int num = chunkSize;
-		FastSetOfInts fastSetOfInts = new FastSetOfInts();
+		FastSetOfInts fastSetOfInts = [];
 		tmpPos.SetDimension(centerPos.dimension);
 
 		while (positionsToClear.Count > 0)

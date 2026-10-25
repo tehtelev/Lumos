@@ -50,7 +50,7 @@ public static class BlockAccessorWorldGen_RunScheduled_Patch
             return null;
         }
         return AccessTools.Method(type, "RunScheduledBlockLightUpdates",
-            new[] { typeof(int), typeof(int) });
+            [typeof(int), typeof(int)]);
     }
 
     /// <summary>
@@ -90,7 +90,7 @@ public static class BlockAccessorWorldGen_RunScheduled_Patch
 
             // 4. GetMapChunk(int, int) — override метод в BlockAccessorWorldGen
             _getMapChunkMethod = AccessTools.Method(bawgType, "GetMapChunk",
-                new[] { typeof(int), typeof(int) });
+                [typeof(int), typeof(int)]);
             if (_getMapChunkMethod == null)
                 throw new MissingMethodException(bawgType.FullName, "GetMapChunk");
 
@@ -111,7 +111,7 @@ public static class BlockAccessorWorldGen_RunScheduled_Patch
             _reflectionResolved = true;
             return true;
         }
-        catch (Exception ex)
+        catch
         {
             _reflectionFailed = true;
 
@@ -136,7 +136,7 @@ public static class BlockAccessorWorldGen_RunScheduled_Patch
         }
 
         // 1. Достаём map chunk
-        var mapChunk = _getMapChunkMethod!.Invoke(__instance, new object[] { chunkx, chunkz });
+        var mapChunk = _getMapChunkMethod!.Invoke(__instance, [chunkx, chunkz]);
         if (mapChunk == null)
             return false; // нет чанка — ничего не делаем, пропускаем оригинал
 
@@ -169,7 +169,7 @@ public static class BlockAccessorWorldGen_RunScheduled_Patch
             // 5. Вызываем наш метод обработки отложенных обновлений
             lumosIlluminator.ProcessScheduledBlockLightUpdates(scheduledUpdates);
         }
-        catch (Exception ex)
+        catch
         {
 
         }

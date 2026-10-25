@@ -25,11 +25,10 @@ public static class Program
 
 public class BuildContext : FrostingContext
 {
-    public List<string> ProjectNames = new()
-    {
-        "Lumos"
-        // Add other project names here
-    };
+    public List<string> ProjectNames =
+    [
+        "Lumos" // Add other project names here
+    ];
 
     public BuildContext(ICakeContext context) : base(context)
     {

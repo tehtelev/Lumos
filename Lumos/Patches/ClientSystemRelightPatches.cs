@@ -7,7 +7,6 @@ using System.Runtime.CompilerServices;
 using Vintagestory.API.Common;
 using Vintagestory.API.Common.Entities;
 using Vintagestory.API.Datastructures;
-using Vintagestory.API.MathTools;
 using Vintagestory.Client.NoObf;
 using Vintagestory.Common;
 using Vintagestory.Common.Database;
